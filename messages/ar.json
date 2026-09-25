@@ -1,0 +1,712 @@
+{
+  "app": {
+    "name": "نظام التسويق الذكي",
+    "tagline": "فريقك التسويقي يعمل تلقائيًا — وأنت صاحب القرار."
+  },
+  "nav": {
+    "home": "الرئيسية",
+    "assistant": "المساعد",
+    "campaigns": "الحملات",
+    "creatives": "الإبداعات",
+    "insights": "الرؤى",
+    "integrations": "التكاملات",
+    "settings": "الإعدادات",
+    "openMenu": "فتح القائمة",
+    "language": "اللغة",
+    "english": "الإنجليزية",
+    "arabic": "العربية",
+    "research": "البحث",
+    "calendar": "التقويم",
+    "agents": "الوكلاء"
+  },
+  "common": {
+    "retry": "إعادة المحاولة",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "close": "إغلاق",
+    "save": "حفظ",
+    "back": "رجوع",
+    "next": "التالي",
+    "loading": "جارٍ التحميل…",
+    "errorTitle": "حدث خطأ ما",
+    "errorGeneric": "تعذّر التحميل. حاول مرة أخرى.",
+    "emptyTitle": "لا يوجد شيء بعد",
+    "viewAll": "عرض الكل",
+    "open": "فتح",
+    "search": "بحث",
+    "all": "الكل",
+    "before": "قبل",
+    "after": "بعد",
+    "yes": "نعم",
+    "no": "لا",
+    "notAvailable": "—",
+    "createdAt": "أُنشئ في {date}",
+    "confidence": "ثقة {value}%",
+    "select": "اختر…",
+    "remove": "إزالة",
+    "cancelled": "أُلغي"
+  },
+  "status": {
+    "draft": "مسودة",
+    "scheduled": "مجدولة",
+    "active": "نشطة",
+    "paused": "متوقفة",
+    "completed": "مكتملة",
+    "failed": "فشلت",
+    "generating": "قيد الإنشاء",
+    "ready": "جاهز",
+    "approved": "معتمد",
+    "rejected": "مرفوض",
+    "pending": "قيد الانتظار",
+    "applied": "مُطبَّق",
+    "dismissed": "مُتجاهَل",
+    "queued": "في الانتظار",
+    "running": "قيد التنفيذ",
+    "succeeded": "نجح"
+  },
+  "objective": {
+    "awareness": "الوعي",
+    "traffic": "الزيارات",
+    "engagement": "التفاعل",
+    "leads": "العملاء المحتملون",
+    "sales": "المبيعات",
+    "app_installs": "تثبيت التطبيق"
+  },
+  "severity": {
+    "info": "معلومة",
+    "warning": "تحذير",
+    "critical": "حرج"
+  },
+  "kind": {
+    "image": "صورة",
+    "video": "فيديو",
+    "copy": "نص"
+  },
+  "metrics": {
+    "impressions": "مرات الظهور",
+    "reach": "الوصول",
+    "clicks": "النقرات",
+    "ctr": "نسبة النقر",
+    "cpc": "تكلفة النقرة",
+    "cpm": "تكلفة الألف ظهور",
+    "conversions": "التحويلات",
+    "cpa": "تكلفة التحويل",
+    "roas": "عائد الإنفاق",
+    "spend": "الإنفاق",
+    "dailyBudget": "الميزانية اليومية",
+    "health": "الصحة"
+  },
+  "actions": {
+    "CREATE_CAMPAIGN": "إنشاء حملة",
+    "CREATE_CREATIVE": "إنشاء إبداع",
+    "GENERATE_VARIATIONS": "توليد نسخ بديلة",
+    "ANALYZE_CAMPAIGN": "تحليل الحملة",
+    "ANALYZE_CREATIVE": "تحليل الإبداع",
+    "RESEARCH_COMPETITORS": "بحث المنافسين",
+    "OPTIMIZE_CAMPAIGN": "تحسين الحملة",
+    "CONNECT_META": "ربط Meta",
+    "APPLY_RECOMMENDATION": "تطبيق التوصية",
+    "ADD_TO_CAMPAIGN": "إضافة إلى حملة",
+    "UPDATE_CAMPAIGN": "تحديث الحملة",
+    "confirmApply": "تأكيد وتطبيق",
+    "confirmTitle": "راجع التغيير قبل التطبيق",
+    "confirmDescription": "سيؤثر هذا على حملة نشطة. لن يُطبَّق أي شيء قبل تأكيدك.",
+    "noChanges": "لا توجد تغييرات في الحقول — أكّد للمتابعة.",
+    "pickCampaignTitle": "اختر حملة",
+    "pickCampaignDescription": "اختر الحملة التي سيُضاف إليها هذا الإبداع.",
+    "addToCampaignTitle": "إضافة \"{creative}\" إلى \"{campaign}\"",
+    "updateCampaignTitle": "تحديث \"{name}\"",
+    "diff": {
+      "creativeCount": "عدد الإبداعات",
+      "campaignStatus": "حالة الحملة",
+      "dailyBudget": "الميزانية اليومية",
+      "name": "الاسم"
+    },
+    "toast": {
+      "campaignSaved": "تم حفظ الحملة \"{name}\" كمسودة",
+      "campaignLaunched": "تم إطلاق الحملة \"{name}\"",
+      "campaignUpdated": "تم تحديث الحملة \"{name}\"",
+      "creativesGenerated": "{count, plural, one {تم توليد إبداع واحد} other {تم توليد # إبداعات}}",
+      "variationsGenerated": "{count, plural, one {تم توليد نسخة واحدة} other {تم توليد # نسخ}}",
+      "taskStarted": "بدأ الوكيل — ستظهر النتائج في المساعد",
+      "metaConnected": "تم ربط حساب Meta",
+      "metaDisconnected": "تم فصل حساب Meta",
+      "metaNeedsReauth": "تم الربط، لكن يلزم إعادة التفويض",
+      "metaError": "تعذّر الاتصال بـ Meta",
+      "recommendationApplied": "تم تطبيق التوصية",
+      "addedToCampaign": "أُضيف إلى \"{name}\"",
+      "failed": "فشل الإجراء: {message}",
+      "cancelled": "أُلغي — لم يتغير شيء",
+      "calendarGenerated": "{count, plural, one {تم تخطيط عنصر محتوى واحد} other {تم تخطيط # عناصر محتوى}}",
+      "agentUpdated": "تم تحديث {name}"
+    },
+    "launchTitle": "إطلاق \"{name}\"",
+    "ANALYZE_WEBSITE": "تحليل الموقع",
+    "ANALYZE_SOCIAL_PROFILE": "تحليل حساب اجتماعي",
+    "ANALYZE_REVIEWS": "تحليل المراجعات",
+    "ANALYZE_MARKET": "تحليل السوق",
+    "ANALYZE_KEYWORDS": "تحليل الكلمات المفتاحية",
+    "ANALYZE_COMPETITOR_CREATIVES": "تحليل إعلانات المنافسين",
+    "DETECT_MARKET_GAPS": "اكتشاف فجوات السوق",
+    "GENERATE_MARKETING_STRATEGY": "توليد استراتيجية تسويق",
+    "GENERATE_CONTENT_CALENDAR": "توليد تقويم المحتوى",
+    "GENERATE_TEXT": "توليد",
+    "UPDATE_AGENT": "حفظ الوكيل"
+  },
+  "home": {
+    "heroTitle": "على ماذا نعمل اليوم؟",
+    "heroPlaceholder": "اسأل أي شيء — \"لماذا تكلفة التحويل مرتفعة؟\"، \"أنشئ ريل للقهوة الباردة\"…",
+    "ask": "اسأل الذكاء",
+    "capabilities": "القدرات",
+    "research": "بحث",
+    "researchDesc": "الموقع، المنافسون، المراجعات، الكلمات المفتاحية",
+    "create": "إنشاء",
+    "createDesc": "حملات، صور، فيديو، نصوص",
+    "analyze": "تحليل",
+    "analyzeDesc": "الأداء والأسباب الجذرية",
+    "optimize": "تحسين",
+    "optimizeDesc": "الميزانية، المواضع، الإبداعات",
+    "activeCampaigns": "الحملات النشطة",
+    "noActiveCampaigns": "لا توجد حملات نشطة بعد",
+    "needsAttention": "يحتاج انتباهك",
+    "allClear": "كل شيء على ما يرام — لا توجد مشكلات."
+  },
+  "assistant": {
+    "title": "المساعد",
+    "newChat": "محادثة جديدة",
+    "history": "السجل",
+    "noConversations": "لا توجد محادثات بعد",
+    "startOne": "ابدأ محادثة",
+    "placeholder": "اسأل المساعد…",
+    "send": "إرسال",
+    "stop": "إيقاف",
+    "context": "السياق",
+    "addContext": "إضافة سياق",
+    "thinking": "يفكّر…",
+    "emptyTitle": "اسأل أي شيء عن تسويقك",
+    "emptyDesc": "أستطيع بحث المنافسين، إنشاء الحملات والإبداعات، تحليل الأداء واقتراح التحسينات — دائمًا بموافقتك.",
+    "suggestions": {
+      "cpa": "لماذا تكلفة التحويل مرتفعة؟",
+      "competitors": "من هم منافسيّ؟",
+      "creative": "أنشئ إعلان فيديو للقهوة الباردة",
+      "campaign": "خطّط حملة لافتتاح المعادي"
+    },
+    "notFound": "المحادثة غير موجودة",
+    "unknownBlock": "محتوى غير مدعوم ({type})",
+    "answered": "تمت الإجابة",
+    "you": "أنت",
+    "ai": "المساعد",
+    "task": "مهمة الوكيل",
+    "retryMessage": "إعادة المحاولة",
+    "removeContext": "إزالة {label} من السياق",
+    "conversationLoadError": "تعذّر تحميل هذه المحادثة."
+  },
+  "blocks": {
+    "findings": "النتائج",
+    "recommendation": "توصية",
+    "expectedImpact": "الأثر المتوقع",
+    "rationale": "السبب",
+    "changes": "التغييرات",
+    "metrics": "المقاييس",
+    "task": "المهمة",
+    "select": "اختر خيارًا",
+    "submit": "إرسال",
+    "error": "خطأ"
+  },
+  "campaigns": {
+    "title": "الحملات",
+    "new": "حملة جديدة",
+    "name": "الاسم",
+    "objective": "الهدف",
+    "status": "الحالة",
+    "budget": "الميزانية",
+    "spend": "الإنفاق",
+    "roas": "عائد الإنفاق",
+    "health": "الصحة",
+    "empty": "لا توجد حملات بعد",
+    "emptyDesc": "أنشئ حملتك الأولى بالذكاء الاصطناعي أو يدويًا.",
+    "searchPlaceholder": "ابحث في الحملات…",
+    "filterStatus": "الحالة",
+    "notFound": "الحملة غير موجودة",
+    "pause": "إيقاف مؤقت",
+    "resume": "استئناف",
+    "editBudget": "تعديل الميزانية",
+    "newBudget": "الميزانية اليومية الجديدة",
+    "perDay": "/يوم",
+    "tabs": {
+      "overview": "نظرة عامة",
+      "strategy": "الاستراتيجية",
+      "audience": "الجمهور",
+      "creatives": "الإبداعات",
+      "performance": "الأداء",
+      "recommendations": "التوصيات",
+      "learnings": "الدروس"
+    },
+    "overview": {
+      "period": "تعمل من {start} إلى {end}",
+      "ongoing": "مستمرة",
+      "metaId": "معرّف حملة Meta",
+      "notPublished": "لم تُنشر على Meta",
+      "noMetrics": "لا توجد بيانات أداء بعد",
+      "noMetricsDesc": "تظهر المقاييس بمجرد تفعيل الحملة على Meta."
+    },
+    "strategy": {
+      "empty": "لا توجد استراتيجية بعد",
+      "emptyDesc": "دع الذكاء الاصطناعي يصيغ استراتيجية من ملف علامتك والدروس السابقة.",
+      "summary": "الملخص",
+      "keyMessages": "الرسائل الرئيسية",
+      "channels": "القنوات",
+      "placements": "المواضع",
+      "bidding": "المزايدة",
+      "phases": "المراحل",
+      "days": "{count} يوم",
+      "kpis": "أهداف المؤشرات"
+    },
+    "audience": {
+      "empty": "لم يُحدَّد جمهور",
+      "age": "العمر",
+      "genders": "الجنس",
+      "locations": "المواقع",
+      "interests": "الاهتمامات",
+      "behaviors": "السلوكيات",
+      "reach": "الوصول المتوقع"
+    },
+    "creatives": {
+      "empty": "لا توجد إبداعات مرفقة",
+      "emptyDesc": "ولّد إبداعات أو أضف إبداعات موجودة إلى هذه الحملة."
+    },
+    "performance": {
+      "empty": "لا توجد بيانات أداء",
+      "emptyDesc": "تظهر البيانات بعد أن تحقق الحملة مرات ظهور.",
+      "last14": "آخر 14 يومًا",
+      "date": "التاريخ"
+    },
+    "recommendations": {
+      "empty": "لا توجد توصيات",
+      "emptyDesc": "شغّل المحسّن للحصول على اقتراحات لهذه الحملة.",
+      "dismiss": "تجاهل"
+    },
+    "learnings": {
+      "empty": "لا توجد دروس بعد",
+      "emptyDesc": "تُستخلص الدروس تلقائيًا أثناء تشغيل الحملة.",
+      "evidence": "الدليل",
+      "category": {
+        "audience": "الجمهور",
+        "creative": "الإبداع",
+        "timing": "التوقيت",
+        "budget": "الميزانية",
+        "messaging": "الرسائل"
+      }
+    },
+    "wizard": {
+      "title": "حملة جديدة",
+      "steps": {
+        "goal": "الهدف",
+        "audience": "الجمهور",
+        "strategy": "الاستراتيجية",
+        "creatives": "الإبداعات",
+        "review": "المراجعة",
+        "launch": "الإطلاق"
+      },
+      "goal": {
+        "name": "اسم الحملة",
+        "namePlaceholder": "مثال: إطلاق القهوة الباردة الصيفي",
+        "objective": "الهدف",
+        "budget": "الميزانية اليومية",
+        "currency": "العملة",
+        "startDate": "تاريخ البدء",
+        "endDate": "تاريخ الانتهاء (اختياري)"
+      },
+      "audience": {
+        "name": "اسم الجمهور",
+        "namePlaceholder": "مثال: عشاق القهوة في القاهرة",
+        "ageMin": "أقل عمر",
+        "ageMax": "أقصى عمر",
+        "locations": "المواقع (مفصولة بفواصل)",
+        "interests": "الاهتمامات (مفصولة بفواصل)",
+        "gender": "الجنس",
+        "all": "الكل",
+        "male": "ذكور",
+        "female": "إناث"
+      },
+      "strategy": {
+        "generate": "توليد استراتيجية بالذكاء الاصطناعي",
+        "regenerate": "إعادة التوليد",
+        "generating": "جارٍ صياغة الاستراتيجية…",
+        "brief": "ملخص اختياري للذكاء الاصطناعي",
+        "briefPlaceholder": "هل هناك ما تريد التركيز عليه؟",
+        "empty": "لا توجد استراتيجية بعد — ولّد واحدة أو تخطَّ هذه الخطوة."
+      },
+      "creatives": {
+        "pick": "اختر إبداعات موجودة",
+        "selected": "{count} محدد",
+        "empty": "لا توجد إبداعات متاحة",
+        "emptyDesc": "يمكنك إضافة الإبداعات بعد إنشاء الحملة.",
+        "createNew": "إنشاء إبداع جديد"
+      },
+      "review": {
+        "title": "المراجعة",
+        "goal": "الهدف",
+        "audience": "الجمهور",
+        "strategy": "الاستراتيجية",
+        "creatives": "الإبداعات",
+        "noStrategy": "بدون استراتيجية",
+        "creativeCount": "{count, plural, =0 {لا إبداعات} one {إبداع واحد} other {# إبداعات}}"
+      },
+      "launch": {
+        "title": "جاهز للإطلاق؟",
+        "desc": "الإطلاق ينشر الحملة على Meta ويبدأ الإنفاق. الحفظ كمسودة يبقي كل شيء قابلًا للتعديل.",
+        "saveDraft": "حفظ كمسودة",
+        "launchNow": "إطلاق الآن",
+        "requiresMeta": "اربط حساب Meta قبل الإطلاق.",
+        "confirmTitle": "إطلاق \"{name}\"",
+        "confirmDesc": "سيبدأ الإنفاق بمعدل {budget} {currency}/يوم."
+      },
+      "validation": {
+        "nameRequired": "يجب أن يكون الاسم حرفين على الأقل",
+        "budgetPositive": "يجب أن تكون الميزانية أكبر من 0",
+        "audienceName": "اسم الجمهور مطلوب"
+      }
+    }
+  },
+  "creatives": {
+    "title": "الإبداعات",
+    "create": "إنشاء",
+    "createImage": "صورة",
+    "createVideo": "فيديو",
+    "createCopy": "نص",
+    "analyzeReference": "تحليل مرجع",
+    "empty": "لا توجد إبداعات بعد",
+    "emptyDesc": "ولّد أول صورة أو فيديو أو نص بالذكاء الاصطناعي.",
+    "filterKind": "النوع",
+    "filterCampaign": "الحملة",
+    "unassigned": "غير مرتبط",
+    "score": "التقييم",
+    "dialog": {
+      "title": "إنشاء {kind}",
+      "brief": "الوصف",
+      "briefPlaceholder": "صف ما تريده، مثل: 'زجاجة قهوة باردة على الثلج، سطح في القاهرة عند الغروب، ألوان دافئة'",
+      "campaign": "إرفاق بحملة (اختياري)",
+      "none": "بدون",
+      "aspect": "نسبة الأبعاد",
+      "count": "العدد",
+      "generate": "توليد",
+      "generating": "جارٍ التوليد…",
+      "briefRequired": "يجب أن يكون الوصف 3 أحرف على الأقل"
+    },
+    "reference": {
+      "title": "تحليل إعلان مرجعي",
+      "desc": "ارفع إعلان منافس أو مصدر إلهام. سيحلل الذكاء الاصطناعي ما يجعله ناجحًا ويصيغ وصفًا مستوحى.",
+      "upload": "رفع ملف",
+      "orUrl": "أو الصق رابطًا",
+      "urlPlaceholder": "https://…",
+      "kind": "النوع",
+      "analyze": "تحليل",
+      "analyzing": "جارٍ التحليل…",
+      "hook": "الخطاف",
+      "structure": "البنية",
+      "visualStyle": "الأسلوب البصري",
+      "tone": "النبرة",
+      "strengths": "نقاط القوة",
+      "weaknesses": "نقاط الضعف",
+      "estimated": "الأداء المتوقع",
+      "inspiredBrief": "وصف مستوحى",
+      "createInspired": "إنشاء نسخة مستوحاة",
+      "sourceRequired": "ارفع ملفًا أو الصق رابطًا",
+      "low": "منخفض",
+      "medium": "متوسط",
+      "high": "مرتفع"
+    },
+    "card": {
+      "menu": "إجراءات الإبداع",
+      "video": "فيديو {seconds} ث"
+    },
+    "generateText": "اكتب بالذكاء",
+    "textTools": {
+      "title": "اكتب بالذكاء الاصطناعي",
+      "brief": "عن ماذا؟",
+      "briefPlaceholder": "مثال: إطلاق القهوة الباردة الصيفي لمكاتب القاهرة",
+      "tool": "ماذا تكتب",
+      "generate": "توليد",
+      "generating": "جارٍ الكتابة…",
+      "copy": "نسخ",
+      "copied": "تم النسخ",
+      "useAsBrief": "استخدم كموجز إبداعي",
+      "regenerate": "إعادة التوليد",
+      "tools": {
+        "generate_creative_brief": "موجز إبداعي",
+        "generate_commercial_script": "سيناريو إعلان (15 ث)",
+        "generate_image_prompt": "موجّه صورة",
+        "generate_video_prompt": "موجّه فيديو",
+        "generate_ad_copy": "نص إعلاني"
+      }
+    }
+  },
+  "insights": {
+    "title": "الرؤى",
+    "empty": "لا توجد رؤى حاليًا",
+    "emptyDesc": "تُولَّد الرؤى مع تجميع حملاتك للبيانات.",
+    "observation": "الملاحظة",
+    "explanation": "التفسير",
+    "recommendedAction": "الإجراء الموصى به",
+    "filterSeverity": "الخطورة",
+    "campaign": "الحملة",
+    "askAbout": "اسأل المساعد"
+  },
+  "integrations": {
+    "title": "التكاملات",
+    "meta": {
+      "title": "إعلانات Meta",
+      "desc": "انشر الحملات واقرأ الأداء من فيسبوك وإنستغرام.",
+      "account": "الحساب الإعلاني",
+      "page": "الصفحة",
+      "permissions": "الصلاحيات",
+      "connectedAt": "تاريخ الربط",
+      "expiresAt": "انتهاء الرمز",
+      "states": {
+        "not_connected": {
+          "title": "غير متصل",
+          "desc": "اربط حساب Meta Business لنشر الحملات ومزامنة الأداء.",
+          "action": "ربط Meta"
+        },
+        "connecting": {
+          "title": "جارٍ الاتصال…",
+          "desc": "أكمل التفويض في نافذة Meta. يستغرق هذا عادةً بضع ثوانٍ.",
+          "action": "جارٍ الاتصال…"
+        },
+        "connected": {
+          "title": "متصل",
+          "desc": "يمكن نشر الحملات والمقاييس تتم مزامنتها.",
+          "action": "فصل"
+        },
+        "needs_reauth": {
+          "title": "يلزم إعادة التفويض",
+          "desc": "انتهت صلاحية الرمز أو تنقصه صلاحيات. أعد الربط لاستئناف النشر.",
+          "action": "إعادة التفويض"
+        },
+        "error": {
+          "title": "فشل الاتصال",
+          "desc": "حدث خطأ أثناء التفويض.",
+          "action": "حاول مرة أخرى"
+        }
+      }
+    }
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "general": "عام",
+    "language": "اللغة",
+    "timezone": "المنطقة الزمنية",
+    "currency": "العملة",
+    "notifications": "الإشعارات",
+    "email": "إشعارات البريد",
+    "criticalInsights": "تنبيهات الرؤى الحرجة",
+    "weeklyDigest": "الملخص الأسبوعي",
+    "saved": "تم حفظ الإعدادات",
+    "business": "النشاط التجاري",
+    "brand": "ملف العلامة",
+    "tone": "النبرة",
+    "values": "القيم",
+    "doNotUse": "تجنّب",
+    "dataSource": "مصدر البيانات",
+    "mock": "واجهة وهمية (NEXT_PUBLIC_USE_MOCKS=true)",
+    "live": "واجهة حية"
+  },
+  "research": {
+    "title": "البحث",
+    "desc": "وجّه وكيلًا إلى أي شيء — تصل النتائج إلى محادثة مع النتائج والخطوات التالية.",
+    "run": "تشغيل",
+    "recent": "أبحاث حديثة",
+    "noRecent": "لا توجد أبحاث بعد",
+    "tools": {
+      "analyze_website": {
+        "title": "محلل المواقع",
+        "desc": "التموضع والعروض وإشارات الثقة والفجوات لأي موقع.",
+        "placeholder": "https://yourbrand.com"
+      },
+      "analyze_competitor": {
+        "title": "بحث المنافسين",
+        "desc": "من يعلن لجمهورك وكيف.",
+        "placeholder": "اسم المنافس أو الفئة (اختياري)"
+      },
+      "analyze_social_profile": {
+        "title": "الحساب الاجتماعي",
+        "desc": "محاور المحتوى والتفاعل وما ينبغي نشره أكثر.",
+        "placeholder": "@handle"
+      },
+      "analyze_reviews": {
+        "title": "المراجعات",
+        "desc": "المواضيع والاقتباسات والمشاعر من مراجعات العملاء.",
+        "placeholder": "رابط خرائط جوجل / المتجر (اختياري)"
+      },
+      "analyze_market": {
+        "title": "تحليل السوق",
+        "desc": "الحجم والشرائح والاتجاهات لفئتك.",
+        "placeholder": "الفئة أو السؤال (اختياري)"
+      },
+      "analyze_keywords": {
+        "title": "الكلمات المفتاحية",
+        "desc": "مجموعات الطلب البحثي والنية والصعوبة.",
+        "placeholder": "كلمة أساسية، مثل: قهوة باردة القاهرة"
+      },
+      "analyze_competitor_creatives": {
+        "title": "إعلانات المنافسين",
+        "desc": "إعلانات المنافسين طويلة الأمد وخطافاتها.",
+        "placeholder": "اسم المنافس (اختياري)"
+      },
+      "detect_market_gaps": {
+        "title": "فجوات السوق",
+        "desc": "احتياجات غير مخدومة مرتبة حسب الفرصة، من كل الأبحاث حتى الآن.",
+        "placeholder": ""
+      },
+      "generate_marketing_strategy": {
+        "title": "استراتيجية التسويق",
+        "desc": "تموضع 90 يومًا، قنوات، مراحل ومؤشرات.",
+        "placeholder": "أي شيء تريد التركيز عليه؟ (اختياري)"
+      }
+    }
+  },
+  "calendar": {
+    "title": "تقويم المحتوى",
+    "today": "اليوم",
+    "prevMonth": "الشهر السابق",
+    "nextMonth": "الشهر التالي",
+    "generate": "توليد بالذكاء الاصطناعي",
+    "regenerate": "إعادة توليد الشهر",
+    "generating": "جارٍ التخطيط…",
+    "empty": "لا يوجد محتوى مخطط لهذا الشهر",
+    "emptyDesc": "دع وكيل الاستراتيجية يخطط شهرًا من المنشورات المرتبطة بحملاتك ومحاور المحتوى.",
+    "more": "+{count} أخرى",
+    "filterCampaign": "الحملة",
+    "allCampaigns": "كل الحملات",
+    "dialog": {
+      "title": "تخطيط {month}",
+      "postsPerWeek": "منشورات في الأسبوع",
+      "channels": "القنوات",
+      "campaign": "ربط بحملة (اختياري)",
+      "brief": "ملخص (اختياري)",
+      "briefPlaceholder": "مثال: التركيز على إطلاق اشتراك المكاتب",
+      "none": "بدون"
+    },
+    "item": {
+      "title": "العنوان",
+      "date": "التاريخ",
+      "time": "الوقت",
+      "channel": "القناة",
+      "format": "الصيغة",
+      "status": "الحالة",
+      "pillar": "المحور",
+      "hook": "الخطاف",
+      "caption": "النص",
+      "hashtags": "الوسوم",
+      "campaign": "الحملة",
+      "delete": "حذف",
+      "save": "حفظ التغييرات",
+      "createCreative": "إنشاء إبداع لهذا",
+      "openCreative": "فتح الإبداع"
+    },
+    "channel": {
+      "instagram": "إنستغرام",
+      "facebook": "فيسبوك",
+      "tiktok": "تيك توك",
+      "email": "البريد",
+      "blog": "المدونة"
+    },
+    "format": {
+      "post": "منشور",
+      "reel": "ريل",
+      "story": "قصة",
+      "ad": "إعلان",
+      "email": "بريد",
+      "article": "مقال"
+    },
+    "status": {
+      "idea": "فكرة",
+      "draft": "مسودة",
+      "scheduled": "مجدول",
+      "published": "منشور"
+    },
+    "weekdays": [
+      "الإثنين",
+      "الثلاثاء",
+      "الأربعاء",
+      "الخميس",
+      "الجمعة",
+      "السبت",
+      "الأحد"
+    ]
+  },
+  "agents": {
+    "title": "الوكلاء",
+    "desc": "خصّص شخصية كل وكيل وما يُسمح له بفعله. تغييرات الحملات النشطة تتطلب موافقتك دائمًا بغض النظر عن مستوى الاستقلالية.",
+    "edit": "تعديل الشخصية",
+    "enabled": "مفعّل",
+    "disabled": "معطّل",
+    "tools": "الأدوات المسموحة",
+    "autonomy": "الاستقلالية",
+    "role": {
+      "researcher": "باحث",
+      "strategist": "استراتيجي",
+      "creative": "مبدع",
+      "analyst": "محلل",
+      "optimizer": "محسّن"
+    },
+    "autonomyLevels": {
+      "ask_first": {
+        "label": "اسأل أولًا",
+        "desc": "يطرح سؤالًا توضيحيًا قبل فعل أي شيء."
+      },
+      "suggest": {
+        "label": "اقترح",
+        "desc": "يصيغ خطة وينتظر اختيارك."
+      },
+      "auto_draft": {
+        "label": "مسودة تلقائية",
+        "desc": "ينتج المسودات فورًا؛ وأنت تراجع النتيجة."
+      }
+    },
+    "tone": {
+      "professional": "مهني",
+      "friendly": "ودود",
+      "bold": "جريء",
+      "playful": "مرح",
+      "minimal": "مختصر"
+    },
+    "editor": {
+      "name": "الاسم",
+      "emoji": "الرمز",
+      "toneLabel": "النبرة",
+      "language": "لغة العمل",
+      "instructions": "تعليمات مخصصة",
+      "instructionsPlaceholder": "كيف يجب أن يفكر هذا الوكيل ويكتب ويرتّب أولوياته؟",
+      "instructionsHelp": "تُضاف إلى موجّه النظام للوكيل. الحد الأقصى 2000 حرف.",
+      "tools": "الأدوات التي يمكن لهذا الوكيل استخدامها",
+      "autonomy": "مستوى الاستقلالية",
+      "preview": "معاينة",
+      "previewText": "مرحبًا، أنا {name}، {role} الخاص بك. {instructions}"
+    },
+    "toolNames": {
+      "search_web": "بحث الويب",
+      "analyze_website": "محلل المواقع",
+      "analyze_competitor": "بحث المنافسين",
+      "analyze_social_profile": "الحساب الاجتماعي",
+      "analyze_social_content": "المحتوى الاجتماعي",
+      "analyze_reviews": "المراجعات",
+      "analyze_market": "تحليل السوق",
+      "analyze_keywords": "الكلمات المفتاحية",
+      "analyze_competitor_creatives": "إعلانات المنافسين",
+      "detect_market_gaps": "فجوات السوق",
+      "generate_marketing_strategy": "استراتيجية التسويق",
+      "generate_campaign_strategy": "استراتيجية الحملة",
+      "generate_content_calendar": "تقويم المحتوى",
+      "generate_ad_copy": "نص إعلاني",
+      "generate_creative_brief": "موجز إبداعي",
+      "generate_commercial_script": "سيناريو إعلان",
+      "generate_image_prompt": "موجّه صورة",
+      "generate_video_prompt": "موجّه فيديو",
+      "generate_ad_variations": "نسخ إعلانية",
+      "publish_meta_ads": "نشر إعلانات Meta",
+      "analyze_performance": "تحليل الأداء"
+    }
+  }
+}

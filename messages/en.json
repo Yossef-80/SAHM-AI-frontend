@@ -1,0 +1,712 @@
+{
+  "app": {
+    "name": "AI Marketing OS",
+    "tagline": "Your marketing team, on autopilot — with you in control."
+  },
+  "nav": {
+    "home": "Home",
+    "assistant": "Assistant",
+    "campaigns": "Campaigns",
+    "creatives": "Creatives",
+    "insights": "Insights",
+    "integrations": "Integrations",
+    "settings": "Settings",
+    "openMenu": "Open menu",
+    "language": "Language",
+    "english": "English",
+    "arabic": "Arabic",
+    "research": "Research",
+    "calendar": "Calendar",
+    "agents": "Agents"
+  },
+  "common": {
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "save": "Save",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "errorTitle": "Something went wrong",
+    "errorGeneric": "We couldn't load this. Please try again.",
+    "emptyTitle": "Nothing here yet",
+    "viewAll": "View all",
+    "open": "Open",
+    "search": "Search",
+    "all": "All",
+    "before": "Before",
+    "after": "After",
+    "yes": "Yes",
+    "no": "No",
+    "notAvailable": "—",
+    "createdAt": "Created {date}",
+    "confidence": "{value}% confidence",
+    "select": "Select…",
+    "remove": "Remove",
+    "cancelled": "Cancelled"
+  },
+  "status": {
+    "draft": "Draft",
+    "scheduled": "Scheduled",
+    "active": "Active",
+    "paused": "Paused",
+    "completed": "Completed",
+    "failed": "Failed",
+    "generating": "Generating",
+    "ready": "Ready",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "pending": "Pending",
+    "applied": "Applied",
+    "dismissed": "Dismissed",
+    "queued": "Queued",
+    "running": "Running",
+    "succeeded": "Succeeded"
+  },
+  "objective": {
+    "awareness": "Awareness",
+    "traffic": "Traffic",
+    "engagement": "Engagement",
+    "leads": "Leads",
+    "sales": "Sales",
+    "app_installs": "App installs"
+  },
+  "severity": {
+    "info": "Info",
+    "warning": "Warning",
+    "critical": "Critical"
+  },
+  "kind": {
+    "image": "Image",
+    "video": "Video",
+    "copy": "Copy"
+  },
+  "metrics": {
+    "impressions": "Impressions",
+    "reach": "Reach",
+    "clicks": "Clicks",
+    "ctr": "CTR",
+    "cpc": "CPC",
+    "cpm": "CPM",
+    "conversions": "Conversions",
+    "cpa": "CPA",
+    "roas": "ROAS",
+    "spend": "Spend",
+    "dailyBudget": "Daily budget",
+    "health": "Health"
+  },
+  "actions": {
+    "CREATE_CAMPAIGN": "Create campaign",
+    "CREATE_CREATIVE": "Create creative",
+    "GENERATE_VARIATIONS": "Generate variations",
+    "ANALYZE_CAMPAIGN": "Analyze campaign",
+    "ANALYZE_CREATIVE": "Analyze creative",
+    "RESEARCH_COMPETITORS": "Research competitors",
+    "OPTIMIZE_CAMPAIGN": "Optimize campaign",
+    "CONNECT_META": "Connect Meta",
+    "APPLY_RECOMMENDATION": "Apply recommendation",
+    "ADD_TO_CAMPAIGN": "Add to campaign",
+    "UPDATE_CAMPAIGN": "Update campaign",
+    "confirmApply": "Confirm & apply",
+    "confirmTitle": "Review change before applying",
+    "confirmDescription": "This will change a live campaign. Nothing is applied until you confirm.",
+    "noChanges": "No field changes — confirm to proceed.",
+    "pickCampaignTitle": "Choose a campaign",
+    "pickCampaignDescription": "Select the campaign this creative should be added to.",
+    "addToCampaignTitle": "Add \"{creative}\" to \"{campaign}\"",
+    "updateCampaignTitle": "Update \"{name}\"",
+    "diff": {
+      "creativeCount": "Number of creatives",
+      "campaignStatus": "Campaign status",
+      "dailyBudget": "Daily budget",
+      "name": "Name"
+    },
+    "toast": {
+      "campaignSaved": "Campaign \"{name}\" saved as draft",
+      "campaignLaunched": "Campaign \"{name}\" launched",
+      "campaignUpdated": "Campaign \"{name}\" updated",
+      "creativesGenerated": "{count, plural, one {# creative generated} other {# creatives generated}}",
+      "variationsGenerated": "{count, plural, one {# variation generated} other {# variations generated}}",
+      "taskStarted": "Agent started — results will appear in the assistant",
+      "metaConnected": "Meta account connected",
+      "metaDisconnected": "Meta account disconnected",
+      "metaNeedsReauth": "Connected, but re-authorization is required",
+      "metaError": "Could not connect to Meta",
+      "recommendationApplied": "Recommendation applied",
+      "addedToCampaign": "Added to \"{name}\"",
+      "failed": "Action failed: {message}",
+      "cancelled": "Cancelled — nothing was changed",
+      "calendarGenerated": "{count, plural, one {# content item planned} other {# content items planned}}",
+      "agentUpdated": "{name} updated"
+    },
+    "launchTitle": "Launch \"{name}\"",
+    "ANALYZE_WEBSITE": "Analyze website",
+    "ANALYZE_SOCIAL_PROFILE": "Analyze social profile",
+    "ANALYZE_REVIEWS": "Analyze reviews",
+    "ANALYZE_MARKET": "Analyze market",
+    "ANALYZE_KEYWORDS": "Analyze keywords",
+    "ANALYZE_COMPETITOR_CREATIVES": "Analyze competitor ads",
+    "DETECT_MARKET_GAPS": "Detect market gaps",
+    "GENERATE_MARKETING_STRATEGY": "Generate marketing strategy",
+    "GENERATE_CONTENT_CALENDAR": "Generate content calendar",
+    "GENERATE_TEXT": "Generate",
+    "UPDATE_AGENT": "Save agent"
+  },
+  "home": {
+    "heroTitle": "What should we work on today?",
+    "heroPlaceholder": "Ask anything — \"Why is my CPA high?\", \"Create a reel for cold brew\"…",
+    "ask": "Ask AI",
+    "capabilities": "Capabilities",
+    "research": "Research",
+    "researchDesc": "Website, competitors, reviews, keywords",
+    "create": "Create",
+    "createDesc": "Campaigns, images, video, copy",
+    "analyze": "Analyze",
+    "analyzeDesc": "Performance, root causes",
+    "optimize": "Optimize",
+    "optimizeDesc": "Budget, placements, creatives",
+    "activeCampaigns": "Active campaigns",
+    "noActiveCampaigns": "No active campaigns yet",
+    "needsAttention": "Needs attention",
+    "allClear": "All clear — no issues need your attention."
+  },
+  "assistant": {
+    "title": "Assistant",
+    "newChat": "New chat",
+    "history": "History",
+    "noConversations": "No conversations yet",
+    "startOne": "Start a conversation",
+    "placeholder": "Ask the assistant…",
+    "send": "Send",
+    "stop": "Stop",
+    "context": "Context",
+    "addContext": "Add context",
+    "thinking": "Thinking…",
+    "emptyTitle": "Ask anything about your marketing",
+    "emptyDesc": "I can research competitors, create campaigns and creatives, analyze performance and suggest optimizations — always with your approval.",
+    "suggestions": {
+      "cpa": "Why is my CPA high?",
+      "competitors": "Who are my competitors?",
+      "creative": "Create a video ad for cold brew",
+      "campaign": "Plan a campaign for the Maadi opening"
+    },
+    "notFound": "Conversation not found",
+    "unknownBlock": "Unsupported content ({type})",
+    "answered": "Answered",
+    "you": "You",
+    "ai": "Assistant",
+    "task": "Agent task",
+    "retryMessage": "Retry",
+    "removeContext": "Remove {label} from context",
+    "conversationLoadError": "Couldn't load this conversation."
+  },
+  "blocks": {
+    "findings": "Findings",
+    "recommendation": "Recommendation",
+    "expectedImpact": "Expected impact",
+    "rationale": "Why",
+    "changes": "Changes",
+    "metrics": "Metrics",
+    "task": "Task",
+    "select": "Select an option",
+    "submit": "Submit",
+    "error": "Error"
+  },
+  "campaigns": {
+    "title": "Campaigns",
+    "new": "New campaign",
+    "name": "Name",
+    "objective": "Objective",
+    "status": "Status",
+    "budget": "Budget",
+    "spend": "Spend",
+    "roas": "ROAS",
+    "health": "Health",
+    "empty": "No campaigns yet",
+    "emptyDesc": "Create your first campaign with the AI or manually.",
+    "searchPlaceholder": "Search campaigns…",
+    "filterStatus": "Status",
+    "notFound": "Campaign not found",
+    "pause": "Pause",
+    "resume": "Resume",
+    "editBudget": "Edit budget",
+    "newBudget": "New daily budget",
+    "perDay": "/day",
+    "tabs": {
+      "overview": "Overview",
+      "strategy": "Strategy",
+      "audience": "Audience",
+      "creatives": "Creatives",
+      "performance": "Performance",
+      "recommendations": "Recommendations",
+      "learnings": "Learnings"
+    },
+    "overview": {
+      "period": "Runs {start} → {end}",
+      "ongoing": "ongoing",
+      "metaId": "Meta campaign ID",
+      "notPublished": "Not published to Meta",
+      "noMetrics": "No performance data yet",
+      "noMetricsDesc": "Metrics appear once the campaign is live on Meta."
+    },
+    "strategy": {
+      "empty": "No strategy yet",
+      "emptyDesc": "Let the AI draft a strategy from your brand profile and past learnings.",
+      "summary": "Summary",
+      "keyMessages": "Key messages",
+      "channels": "Channels",
+      "placements": "Placements",
+      "bidding": "Bidding",
+      "phases": "Phases",
+      "days": "{count} days",
+      "kpis": "KPI targets"
+    },
+    "audience": {
+      "empty": "No audience defined",
+      "age": "Age",
+      "genders": "Genders",
+      "locations": "Locations",
+      "interests": "Interests",
+      "behaviors": "Behaviors",
+      "reach": "Estimated reach"
+    },
+    "creatives": {
+      "empty": "No creatives attached",
+      "emptyDesc": "Generate creatives or add existing ones to this campaign."
+    },
+    "performance": {
+      "empty": "No performance data",
+      "emptyDesc": "Data appears once the campaign has delivered impressions.",
+      "last14": "Last 14 days",
+      "date": "Date"
+    },
+    "recommendations": {
+      "empty": "No recommendations",
+      "emptyDesc": "Run the optimizer to get suggestions for this campaign.",
+      "dismiss": "Dismiss"
+    },
+    "learnings": {
+      "empty": "No learnings yet",
+      "emptyDesc": "Learnings are extracted automatically as the campaign runs.",
+      "evidence": "Evidence",
+      "category": {
+        "audience": "Audience",
+        "creative": "Creative",
+        "timing": "Timing",
+        "budget": "Budget",
+        "messaging": "Messaging"
+      }
+    },
+    "wizard": {
+      "title": "New campaign",
+      "steps": {
+        "goal": "Goal",
+        "audience": "Audience",
+        "strategy": "Strategy",
+        "creatives": "Creatives",
+        "review": "Review",
+        "launch": "Launch"
+      },
+      "goal": {
+        "name": "Campaign name",
+        "namePlaceholder": "e.g. Summer cold brew launch",
+        "objective": "Objective",
+        "budget": "Daily budget",
+        "currency": "Currency",
+        "startDate": "Start date",
+        "endDate": "End date (optional)"
+      },
+      "audience": {
+        "name": "Audience name",
+        "namePlaceholder": "e.g. Cairo coffee enthusiasts",
+        "ageMin": "Min age",
+        "ageMax": "Max age",
+        "locations": "Locations (comma-separated)",
+        "interests": "Interests (comma-separated)",
+        "gender": "Gender",
+        "all": "All",
+        "male": "Male",
+        "female": "Female"
+      },
+      "strategy": {
+        "generate": "Generate strategy with AI",
+        "regenerate": "Regenerate",
+        "generating": "Drafting strategy…",
+        "brief": "Optional brief for the AI",
+        "briefPlaceholder": "Anything specific to emphasise?",
+        "empty": "No strategy yet — generate one or skip this step."
+      },
+      "creatives": {
+        "pick": "Pick existing creatives",
+        "selected": "{count} selected",
+        "empty": "No creatives available",
+        "emptyDesc": "You can add creatives after creating the campaign.",
+        "createNew": "Create new creative"
+      },
+      "review": {
+        "title": "Review",
+        "goal": "Goal",
+        "audience": "Audience",
+        "strategy": "Strategy",
+        "creatives": "Creatives",
+        "noStrategy": "No strategy",
+        "creativeCount": "{count, plural, =0 {No creatives} one {# creative} other {# creatives}}"
+      },
+      "launch": {
+        "title": "Ready to launch?",
+        "desc": "Launching publishes the campaign to Meta and starts spending. Saving as draft keeps everything editable.",
+        "saveDraft": "Save as draft",
+        "launchNow": "Launch now",
+        "requiresMeta": "Connect a Meta account before launching.",
+        "confirmTitle": "Launch \"{name}\"",
+        "confirmDesc": "This will start spending {budget} {currency}/day."
+      },
+      "validation": {
+        "nameRequired": "Name must be at least 2 characters",
+        "budgetPositive": "Budget must be greater than 0",
+        "audienceName": "Audience name is required"
+      }
+    }
+  },
+  "creatives": {
+    "title": "Creatives",
+    "create": "Create",
+    "createImage": "Image",
+    "createVideo": "Video",
+    "createCopy": "Copy",
+    "analyzeReference": "Analyze reference",
+    "empty": "No creatives yet",
+    "emptyDesc": "Generate your first image, video or copy with the AI.",
+    "filterKind": "Type",
+    "filterCampaign": "Campaign",
+    "unassigned": "Unassigned",
+    "score": "Score",
+    "dialog": {
+      "title": "Create {kind}",
+      "brief": "Brief",
+      "briefPlaceholder": "Describe what you want, e.g. 'Cold brew bottle on ice, Cairo rooftop at sunset, warm tones'",
+      "campaign": "Attach to campaign (optional)",
+      "none": "None",
+      "aspect": "Aspect ratio",
+      "count": "How many",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "briefRequired": "Brief must be at least 3 characters"
+    },
+    "reference": {
+      "title": "Analyze a reference ad",
+      "desc": "Upload a competitor or inspiration ad. The AI breaks down what makes it work and drafts an inspired brief.",
+      "upload": "Upload file",
+      "orUrl": "or paste a URL",
+      "urlPlaceholder": "https://…",
+      "kind": "Type",
+      "analyze": "Analyze",
+      "analyzing": "Analyzing…",
+      "hook": "Hook",
+      "structure": "Structure",
+      "visualStyle": "Visual style",
+      "tone": "Tone",
+      "strengths": "Strengths",
+      "weaknesses": "Weaknesses",
+      "estimated": "Estimated performance",
+      "inspiredBrief": "Inspired brief",
+      "createInspired": "Create inspired version",
+      "sourceRequired": "Upload a file or paste a URL",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "card": {
+      "menu": "Creative actions",
+      "video": "{seconds}s video"
+    },
+    "generateText": "Write with AI",
+    "textTools": {
+      "title": "Write with AI",
+      "brief": "What is it about?",
+      "briefPlaceholder": "e.g. Summer cold brew launch for Cairo offices",
+      "tool": "What to write",
+      "generate": "Generate",
+      "generating": "Writing…",
+      "copy": "Copy",
+      "copied": "Copied",
+      "useAsBrief": "Use as creative brief",
+      "regenerate": "Regenerate",
+      "tools": {
+        "generate_creative_brief": "Creative brief",
+        "generate_commercial_script": "Commercial script (15s)",
+        "generate_image_prompt": "Image prompt",
+        "generate_video_prompt": "Video prompt",
+        "generate_ad_copy": "Ad copy"
+      }
+    }
+  },
+  "insights": {
+    "title": "Insights",
+    "empty": "No insights right now",
+    "emptyDesc": "Insights are generated as your campaigns collect data.",
+    "observation": "Observation",
+    "explanation": "Explanation",
+    "recommendedAction": "Recommended action",
+    "filterSeverity": "Severity",
+    "campaign": "Campaign",
+    "askAbout": "Ask assistant"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "meta": {
+      "title": "Meta Ads",
+      "desc": "Publish campaigns and read performance from Facebook & Instagram.",
+      "account": "Ad account",
+      "page": "Page",
+      "permissions": "Permissions",
+      "connectedAt": "Connected",
+      "expiresAt": "Token expires",
+      "states": {
+        "not_connected": {
+          "title": "Not connected",
+          "desc": "Connect your Meta Business account to publish campaigns and sync performance.",
+          "action": "Connect Meta"
+        },
+        "connecting": {
+          "title": "Connecting…",
+          "desc": "Complete the authorization in the Meta window. This usually takes a few seconds.",
+          "action": "Connecting…"
+        },
+        "connected": {
+          "title": "Connected",
+          "desc": "Campaigns can be published and metrics are syncing.",
+          "action": "Disconnect"
+        },
+        "needs_reauth": {
+          "title": "Re-authorization needed",
+          "desc": "Your token expired or is missing permissions. Reconnect to resume publishing.",
+          "action": "Re-authorize"
+        },
+        "error": {
+          "title": "Connection failed",
+          "desc": "Something went wrong during authorization.",
+          "action": "Try again"
+        }
+      }
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "language": "Language",
+    "timezone": "Timezone",
+    "currency": "Currency",
+    "notifications": "Notifications",
+    "email": "Email notifications",
+    "criticalInsights": "Critical insight alerts",
+    "weeklyDigest": "Weekly digest",
+    "saved": "Settings saved",
+    "business": "Business",
+    "brand": "Brand profile",
+    "tone": "Tone",
+    "values": "Values",
+    "doNotUse": "Avoid",
+    "dataSource": "Data source",
+    "mock": "Mock API (NEXT_PUBLIC_USE_MOCKS=true)",
+    "live": "Live API"
+  },
+  "research": {
+    "title": "Research",
+    "desc": "Point an agent at anything — results stream into a conversation with findings and next actions.",
+    "run": "Run",
+    "recent": "Recent research",
+    "noRecent": "No research yet",
+    "tools": {
+      "analyze_website": {
+        "title": "Website analyzer",
+        "desc": "Positioning, offers, trust signals and gaps of any site.",
+        "placeholder": "https://yourbrand.com"
+      },
+      "analyze_competitor": {
+        "title": "Competitor research",
+        "desc": "Who's advertising to your audience and how.",
+        "placeholder": "Competitor name or category (optional)"
+      },
+      "analyze_social_profile": {
+        "title": "Social profile",
+        "desc": "Content pillars, engagement and what to post more of.",
+        "placeholder": "@handle"
+      },
+      "analyze_reviews": {
+        "title": "Reviews",
+        "desc": "Themes, quotes and sentiment from customer reviews.",
+        "placeholder": "Google Maps / store URL (optional)"
+      },
+      "analyze_market": {
+        "title": "Market analysis",
+        "desc": "Size, segments and trends for your category.",
+        "placeholder": "Category or question (optional)"
+      },
+      "analyze_keywords": {
+        "title": "Keywords",
+        "desc": "Search demand clusters, intent and difficulty.",
+        "placeholder": "Seed keyword, e.g. cold brew cairo"
+      },
+      "analyze_competitor_creatives": {
+        "title": "Competitor ads",
+        "desc": "Long-running competitor creatives and their hooks.",
+        "placeholder": "Competitor name (optional)"
+      },
+      "detect_market_gaps": {
+        "title": "Market gaps",
+        "desc": "Unserved needs ranked by opportunity, from all research so far.",
+        "placeholder": ""
+      },
+      "generate_marketing_strategy": {
+        "title": "Marketing strategy",
+        "desc": "90-day positioning, channels, phases and KPIs.",
+        "placeholder": "Anything to emphasise? (optional)"
+      }
+    }
+  },
+  "calendar": {
+    "title": "Content calendar",
+    "today": "Today",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "generate": "Generate with AI",
+    "regenerate": "Regenerate month",
+    "generating": "Planning…",
+    "empty": "No content planned for this month",
+    "emptyDesc": "Let the strategist agent plan a month of posts mapped to your campaigns and content pillars.",
+    "more": "+{count} more",
+    "filterCampaign": "Campaign",
+    "allCampaigns": "All campaigns",
+    "dialog": {
+      "title": "Plan {month}",
+      "postsPerWeek": "Posts per week",
+      "channels": "Channels",
+      "campaign": "Tie to campaign (optional)",
+      "brief": "Brief (optional)",
+      "briefPlaceholder": "e.g. focus on the office subscription launch",
+      "none": "None"
+    },
+    "item": {
+      "title": "Title",
+      "date": "Date",
+      "time": "Time",
+      "channel": "Channel",
+      "format": "Format",
+      "status": "Status",
+      "pillar": "Pillar",
+      "hook": "Hook",
+      "caption": "Caption",
+      "hashtags": "Hashtags",
+      "campaign": "Campaign",
+      "delete": "Delete",
+      "save": "Save changes",
+      "createCreative": "Create creative for this",
+      "openCreative": "Open creative"
+    },
+    "channel": {
+      "instagram": "Instagram",
+      "facebook": "Facebook",
+      "tiktok": "TikTok",
+      "email": "Email",
+      "blog": "Blog"
+    },
+    "format": {
+      "post": "Post",
+      "reel": "Reel",
+      "story": "Story",
+      "ad": "Ad",
+      "email": "Email",
+      "article": "Article"
+    },
+    "status": {
+      "idea": "Idea",
+      "draft": "Draft",
+      "scheduled": "Scheduled",
+      "published": "Published"
+    },
+    "weekdays": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ]
+  },
+  "agents": {
+    "title": "Agents",
+    "desc": "Customize each agent's persona and what it's allowed to do. Live campaign changes always require your approval, regardless of autonomy.",
+    "edit": "Edit persona",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "tools": "Allowed tools",
+    "autonomy": "Autonomy",
+    "role": {
+      "researcher": "Researcher",
+      "strategist": "Strategist",
+      "creative": "Creative",
+      "analyst": "Analyst",
+      "optimizer": "Optimizer"
+    },
+    "autonomyLevels": {
+      "ask_first": {
+        "label": "Ask first",
+        "desc": "Asks a clarifying question before doing anything."
+      },
+      "suggest": {
+        "label": "Suggest",
+        "desc": "Drafts a plan and waits for you to pick an option."
+      },
+      "auto_draft": {
+        "label": "Auto-draft",
+        "desc": "Produces drafts immediately; you review the result."
+      }
+    },
+    "tone": {
+      "professional": "Professional",
+      "friendly": "Friendly",
+      "bold": "Bold",
+      "playful": "Playful",
+      "minimal": "Minimal"
+    },
+    "editor": {
+      "name": "Name",
+      "emoji": "Emoji",
+      "toneLabel": "Tone",
+      "language": "Working language",
+      "instructions": "Custom instructions",
+      "instructionsPlaceholder": "How should this agent think, write and prioritise?",
+      "instructionsHelp": "Injected into the agent's system prompt. Max 2000 characters.",
+      "tools": "Tools this agent may use",
+      "autonomy": "Autonomy level",
+      "preview": "Preview",
+      "previewText": "Hi, I'm {name}, your {role}. {instructions}"
+    },
+    "toolNames": {
+      "search_web": "Web search",
+      "analyze_website": "Website analyzer",
+      "analyze_competitor": "Competitor research",
+      "analyze_social_profile": "Social profile",
+      "analyze_social_content": "Social content",
+      "analyze_reviews": "Reviews",
+      "analyze_market": "Market analysis",
+      "analyze_keywords": "Keywords",
+      "analyze_competitor_creatives": "Competitor ads",
+      "detect_market_gaps": "Market gaps",
+      "generate_marketing_strategy": "Marketing strategy",
+      "generate_campaign_strategy": "Campaign strategy",
+      "generate_content_calendar": "Content calendar",
+      "generate_ad_copy": "Ad copy",
+      "generate_creative_brief": "Creative brief",
+      "generate_commercial_script": "Commercial script",
+      "generate_image_prompt": "Image prompt",
+      "generate_video_prompt": "Video prompt",
+      "generate_ad_variations": "Ad variations",
+      "publish_meta_ads": "Publish Meta ads",
+      "analyze_performance": "Performance analysis"
+    }
+  }
+}
