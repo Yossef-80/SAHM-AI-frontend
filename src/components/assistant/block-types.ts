@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ActionCardBlockSchema,
+  ContextUsedBlockSchema,
   ErrorBlockSchema,
   FindingsBlockSchema,
   MessageBlockSchema,
@@ -19,5 +20,6 @@ export type RecommendationBlock = z.infer<typeof RecommendationBlockSchema>;
 export type MetricBlock = z.infer<typeof MetricBlockSchema>;
 export type ActionCardBlock = z.infer<typeof ActionCardBlockSchema>;
 export type TaskProgressBlock = z.infer<typeof TaskProgressBlockSchema>;
+export type ContextUsedBlock = z.infer<typeof ContextUsedBlockSchema>;
 export type QuestionWithOptionsBlock = z.infer<typeof QuestionWithOptionsBlockSchema>;
 export type ErrorBlock = z.infer<typeof ErrorBlockSchema>;

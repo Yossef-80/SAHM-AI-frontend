@@ -10,8 +10,11 @@ import type { Message, SendMessageInput } from "@/types";
 import { useConversation } from "./use-api";
 
 /**
- * Chat state for one conversation: cached messages + the in-flight streamed exchange.
- * Streaming is consumed from `api.streamMessage` (chunked mock today, SSE later).
+ * Chat state for one conversation: cached messages + the in-flight exchange.
+ *
+ * The FastAPI backend streams orchestration progress over SSE, then returns the
+ * final block list. The optimistic user bubble and progress events stay in the
+ * store while the response is in flight.
  */
 export function useChat(conversationId: string | null) {
   const router = useRouter();
@@ -20,9 +23,11 @@ export function useChat(conversationId: string | null) {
   const stream = useAssistantStore((s) => s.stream);
   const setStream = useAssistantStore((s) => s.setStream);
   const clearContext = useAssistantStore((s) => s.clearContext);
-  const abortRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const streamBelongsHere = !!stream && (stream.conversationId === conversationId || (stream.conversationId === null && conversationId === null));
+  const streamBelongsHere = !!stream && (
+    stream.conversationId === conversationId || (!conversationId && stream.input.conversationId === null)
+  );
 
   const messages = useMemo<Message[]>(() => {
     const base = query.data?.messages ?? [];
@@ -34,7 +39,8 @@ export function useChat(conversationId: string | null) {
 
   const send = useCallback(
     async (input: SendMessageInput) => {
-      abortRef.current = false;
+      const controller = new AbortController();
+      abortRef.current = controller;
       const optimisticUser: Message = {
         id: `tmp_${Date.now()}`,
         conversationId: input.conversationId ?? "new",
@@ -43,30 +49,48 @@ export function useChat(conversationId: string | null) {
         context: input.context,
         createdAt: new Date().toISOString(),
       };
-      setStream({ conversationId: input.conversationId, input, userMessage: optimisticUser, assistantMessage: null, status: "streaming" });
+      setStream({ conversationId: input.conversationId, input, userMessage: optimisticUser, assistantMessage: null, progress: [], status: "streaming" });
       clearContext();
 
       let convId = input.conversationId;
       try {
-        for await (const chunk of api.streamMessage(input)) {
-          if (abortRef.current) break;
-          if (!convId) {
-            convId = chunk.conversation.id;
-            // Move the URL to the new conversation; stream state is in the store so nothing is lost.
-            router.replace(`/assistant/${convId}`);
-          }
-          setStream((prev) =>
-            prev ? { ...prev, conversationId: chunk.conversation.id, userMessage: chunk.userMessage, assistantMessage: chunk.assistantMessage } : prev,
-          );
+        let result: Awaited<ReturnType<typeof api.sendMessage>> | null = null;
+        for await (const snapshot of api.streamMessage(input, (event) => {
+          if (event.conversationId) convId = event.conversationId;
+          setStream((prev) => prev
+            ? {
+                ...prev,
+                conversationId: event.conversationId ?? prev.conversationId,
+                progress: event.type === "conversation_started" ? prev.progress : [...prev.progress, event].slice(-16),
+              }
+            : prev);
+        }, controller.signal)) {
+          result = snapshot;
         }
-        if (convId) {
-          await qc.invalidateQueries({ queryKey: qk.conversation(convId) });
-          await qc.invalidateQueries({ queryKey: qk.conversations });
+        const finalResult = result;
+        if (!finalResult) throw new Error("The assistant stream ended without a response.");
+        convId = finalResult.conversation.id;
+        setStream((prev) =>
+          prev
+            ? {
+                ...prev,
+                conversationId: convId,
+                userMessage: finalResult.userMessage,
+                assistantMessage: finalResult.assistantMessage,
+              }
+            : prev,
+        );
+        if (!input.conversationId && convId && convId !== "new") {
+          router.replace(`/assistant/${convId}`);
         }
-        setStream((prev) => (prev ? { ...prev, status: "done" } : prev));
+        await qc.invalidateQueries({ queryKey: qk.conversation(convId ?? "new") });
+        await qc.invalidateQueries({ queryKey: qk.conversations });
         setStream(null);
+        abortRef.current = null;
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = controller.signal.aborted
+          ? "Request stopped."
+          : err instanceof Error ? err.message : String(err);
         setStream((prev) =>
           prev
             ? {
@@ -84,6 +108,7 @@ export function useChat(conversationId: string | null) {
               }
             : prev,
         );
+        abortRef.current = null;
       }
     },
     [clearContext, qc, router, setStream],
@@ -94,7 +119,7 @@ export function useChat(conversationId: string | null) {
   }, [send, stream]);
 
   const stop = useCallback(() => {
-    abortRef.current = true;
+    abortRef.current?.abort();
   }, []);
 
   return {
@@ -103,6 +128,7 @@ export function useChat(conversationId: string | null) {
     send,
     retry,
     stop,
+    progress: streamBelongsHere ? stream?.progress ?? [] : [],
     isStreaming: streamBelongsHere && stream?.status === "streaming",
     streamError: streamBelongsHere && stream?.status === "error" ? stream.error : undefined,
   };

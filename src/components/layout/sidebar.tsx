@@ -7,6 +7,8 @@ import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { primaryNav, secondaryNav, isActivePath, type NavItem } from "./nav-config";
 import { LanguageSwitcher } from "./language-switcher";
+import { PortfolioSwitcher } from "./portfolio-switcher";
+import { UserMenu } from "./user-menu";
 
 function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const t = useTranslations("nav");
@@ -38,6 +40,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </span>
         <span className="text-sm font-semibold">{t("name")}</span>
       </Link>
+      <PortfolioSwitcher />
       <nav className="flex-1 space-y-1 px-3" aria-label="Primary">
         {primaryNav.map((item) => (
           <NavLink key={item.href} item={item} onNavigate={onNavigate} />
@@ -47,7 +50,8 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}
       </nav>
-      <div className="border-t p-3">
+      <div className="space-y-1 border-t p-3">
+        <UserMenu />
         <LanguageSwitcher />
       </div>
     </div>

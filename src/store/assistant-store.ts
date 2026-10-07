@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ContextChip, Message, SendMessageInput } from "@/types";
+import type { AssistantProgressEvent, ContextChip, Message, SendMessageInput } from "@/types";
 
 type PendingPrompt = { text: string; context: ContextChip[] } | null;
 
@@ -9,6 +9,7 @@ export type ActiveStream = {
   input: SendMessageInput;
   userMessage: Message;
   assistantMessage: Message | null;
+  progress: AssistantProgressEvent[];
   status: "streaming" | "error" | "done";
   error?: string;
 };

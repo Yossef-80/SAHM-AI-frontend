@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -11,6 +13,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { useBrandProfile, useBusiness, useSettings, useUpdateSettings } from "@/hooks/use-api";
+import { BusinessProfileForm } from "@/components/settings/business-profile-form";
 import type { Settings } from "@/types";
 
 const useMocks = (process.env.NEXT_PUBLIC_USE_MOCKS ?? "true") !== "false";
@@ -26,8 +29,39 @@ export function SettingsView() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title={t("title")} />
+      <PageHeader title={t("title")} description={t("description")} />
       <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("admin")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {(
+              [
+                ["/settings/connectors", t("adminConnectors"), t("adminConnectorsDesc")],
+                ["/settings/llm", t("adminLlm"), t("adminLlmDesc")],
+                ["/settings/memory", t("adminMemory"), t("adminMemoryDesc")],
+                ["/settings/usage", t("adminUsage"), t("adminUsageDesc")],
+                ["/settings/audit", t("adminAudit"), t("adminAuditDesc")],
+              ] as const
+            ).map(([href, title, description]) => (
+              <Link
+                key={href}
+                href={href}
+                className="flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{title}</span>
+                  <span className="block text-xs text-muted-foreground">{description}</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+
+        <BusinessProfileForm />
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t("general")}</CardTitle>

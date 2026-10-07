@@ -5,14 +5,24 @@ import { api } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import type {
   AnalyzeReferenceInput,
+  AuditFilters,
+  BusinessProfileUpdateInput,
   CampaignDraft,
+  ConnectorUpdateInput,
+  CreateMemoryItemInput,
   GenerateCreativeInput,
   GenerateStrategyInput,
   ListCampaignsInput,
   ListInsightsInput,
   ListContentInput,
+  ListMemoryItemsInput,
+  LoginInput,
+  LlmSettingsUpdateInput,
+  RegisterInput,
   UpdateContentItemInput,
+  UpdateMemoryItemInput,
   Settings,
+  UsagePeriod,
 } from "@/types";
 
 /* Business */
@@ -122,3 +132,150 @@ export const useUpdateSettings = () => {
     onSuccess: (s) => qc.setQueryData(qk.settings, s),
   });
 };
+
+/* -------------------------------------------------------------------------- */
+/* Auth (P1)                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `GET /auth/me` — the boot check. It runs once per session; the token itself
+ * lives in the auth store, not in the query cache, so React Query never
+ * serialises, inspects or persists it.
+ */
+export const useSession = (enabled = true) =>
+  useQuery({
+    queryKey: qk.session,
+    queryFn: () => api.getSession(),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+export const useRegister = () =>
+  useMutation({ mutationFn: (input: RegisterInput) => api.register(input) });
+
+export const useLogin = () => useMutation({ mutationFn: (input: LoginInput) => api.login(input) });
+
+export const useLogout = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.logout(),
+    // Nothing cached under the old workspace is valid after a sign-out.
+    onSuccess: () => qc.clear(),
+    onSettled: () => qc.clear(),
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/* Business profile (P2.1)                                                      */
+/* -------------------------------------------------------------------------- */
+
+export const useBusinessProfileForm = () =>
+  useQuery({ queryKey: qk.businessProfile, queryFn: () => api.getBusinessProfileForm() });
+
+/**
+ * Saving a profile form is not a domain action — it is not in the action
+ * registry and has no before/after diff to confirm — so it goes through a
+ * TanStack mutation directly, consistent with `useUpdateSettings` above.
+ */
+export const useUpdateBusinessProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: BusinessProfileUpdateInput) => api.updateBusinessProfile(input),
+    onSuccess: (profile) => {
+      qc.setQueryData(qk.businessProfile, profile);
+      qc.invalidateQueries({ queryKey: qk.business });
+      qc.invalidateQueries({ queryKey: qk.brand });
+    },
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/* Connectors (P2.4)                                                            */
+/* -------------------------------------------------------------------------- */
+
+export const useConnectorSettings = () =>
+  useQuery({ queryKey: qk.connectors, queryFn: () => api.getConnectorSettings() });
+
+export const useUpdateConnector = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { connector: string; patch: ConnectorUpdateInput }) =>
+      api.updateConnector(input.connector, input.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.connectors }),
+  });
+};
+
+export const useDeleteConnector = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (connector: string) => api.deleteConnector(connector),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.connectors }),
+  });
+};
+
+export const useLlmSettings = () =>
+  useQuery({ queryKey: qk.llmSettings, queryFn: () => api.getLlmSettings() });
+
+export const useUpdateLlmSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: LlmSettingsUpdateInput) => api.updateLlmSettings(input),
+    onSuccess: (settings) => qc.setQueryData(qk.llmSettings, settings),
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/* Brand memory (P2.2)                                                          */
+/* -------------------------------------------------------------------------- */
+
+export const useMemoryItems = (input?: ListMemoryItemsInput) =>
+  useQuery({
+    queryKey: qk.memory(input as Record<string, unknown> | undefined),
+    queryFn: () => api.listMemoryItems(input),
+  });
+
+export const useCreateMemoryItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateMemoryItemInput) => api.createMemoryItem(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["memory"] }),
+  });
+};
+
+export const useUpdateMemoryItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateMemoryItemInput) => api.updateMemoryItem(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["memory"] }),
+  });
+};
+
+export const useDeleteMemoryItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteMemoryItem(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["memory"] }),
+  });
+};
+
+export const useReindexMemory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (kind?: string) => api.reindexMemory(kind),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["memory"] }),
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/* Usage & audit (P4.1 / P4.4)                                                  */
+/* -------------------------------------------------------------------------- */
+
+export const useUsage = (period: UsagePeriod = "today") =>
+  useQuery({ queryKey: qk.usage(period), queryFn: () => api.getUsage(period) });
+
+export const useAudit = (filters?: AuditFilters) =>
+  useQuery({
+    queryKey: qk.audit(filters as Record<string, unknown> | undefined),
+    queryFn: () => api.getAudit(filters),
+  });
