@@ -15,4 +15,12 @@ export const qk = {
   task: (id: string) => ["task", id] as const,
   meta: ["integrations", "meta"] as const,
   settings: ["settings"] as const,
+  /** `GET /auth/me` — the boot check. Not the token: that lives in the auth store. */
+  session: ["auth", "me"] as const,
+  businessProfile: ["business", "profile"] as const,
+  connectors: ["settings", "connectors"] as const,
+  llmSettings: ["settings", "llm"] as const,
+  memory: (input?: Record<string, unknown>) => ["memory", input ?? {}] as const,
+  usage: (period: string) => ["usage", period] as const,
+  audit: (filters?: Record<string, unknown>) => ["audit", filters ?? {}] as const,
 };

@@ -2,20 +2,42 @@ import type { MarketingApi } from "./types";
 import { ApiError } from "./types";
 import * as fx from "@/lib/mock/fixtures";
 import * as fxx from "@/lib/mock/fixtures-extra";
+import * as fxa from "@/lib/mock/fixtures-admin";
+import { useAuthStore } from "@/store/auth-store";
 import type {
   AgentTask,
+  AuditFilters,
+  AuditList,
+  AuthSession,
+  BusinessProfileForm,
+  BusinessProfileUpdateInput,
   Campaign,
   CampaignDraft,
+  Connector,
+  ConnectorDeleteResult,
+  ConnectorSettings,
+  ConnectorUpdateInput,
   Conversation,
+  CreateMemoryItemInput,
   Creative,
   Insight,
   Learning,
+  ListMemoryItemsInput,
+  LlmSettings,
+  LlmSettingsUpdateInput,
+  LoginInput,
+  LogoutResult,
+  MemoryItem,
+  MemoryItemList,
+  MemoryReindexResult,
   Message,
   MetaConnection,
   Recommendation,
   ReferenceAnalysis,
+  RegisterInput,
   SendMessageInput,
   SendMessageOutput,
+  SessionInfo,
   Settings,
   ActionType,
   AnyBlock,
@@ -23,6 +45,9 @@ import type {
   Agent,
   ContentItem,
   GeneratedText,
+  UpdateMemoryItemInput,
+  Usage,
+  UsagePeriod,
 } from "@/types";
 import {
   AddToCampaignInputSchema,
@@ -69,6 +94,10 @@ async function simulate(opts: { safe?: boolean } = {}) {
 
 type State = {
   campaigns: Campaign[];
+  businessProfile: BusinessProfileForm;
+  memory: MemoryItem[];
+  connectors: ConnectorSettings;
+  audit: AuditList;
   creatives: Creative[];
   recommendations: Recommendation[];
   insights: Insight[];
@@ -85,6 +114,10 @@ type State = {
 
 const state: State = {
   campaigns: clone(fx.campaigns),
+  businessProfile: clone(fxa.mockBusinessProfile) as BusinessProfileForm,
+  memory: clone(fxa.mockMemoryItems),
+  connectors: clone(fxa.mockConnectorSettings),
+  audit: clone(fxa.mockAuditList),
   creatives: clone(fx.creatives),
   recommendations: clone(fx.recommendations),
   insights: clone(fx.insights),
@@ -496,6 +529,14 @@ function upsertConversation(input: SendMessageInput): Conversation {
 /* ------------------------------------------------------------------ */
 
 export class MockApi implements MarketingApi {
+  private llmSettings: LlmSettings = {
+    businessId: state.connectors.businessId,
+    fast: { provider: "mock", model: "mock-fast-1", baseUrl: null, keyConfigured: false, keySource: "missing", extraHeadersConfigured: false, extraHeadersSource: "missing" },
+    strong: { provider: "mock", model: "mock-strong-1", baseUrl: null, keyConfigured: false, keySource: "missing", extraHeadersConfigured: false, extraHeadersSource: "missing" },
+    hasWorkspaceOverride: false,
+    encryptionKeyConfigured: true,
+  };
+
   async getBusiness() {
     await simulate({ safe: true });
     return clone(fx.business);
@@ -1016,5 +1057,278 @@ export class MockApi implements MarketingApi {
     await simulate();
     state.settings = { ...state.settings, ...patch, notifications: { ...state.settings.notifications, ...patch.notifications } };
     return clone(state.settings);
+  }
+
+  /* ------------------------------------------------------------------- auth */
+
+  /**
+   * Mirrors the real contract closely enough that the UI cannot tell the
+   * difference: a wrong password produces the *same* message as an unknown
+   * email, so the login screen is written against the generic path.
+   */
+  private mockSession(overrides?: Partial<AuthSession>): AuthSession {
+    const base = clone(fxa.mockAuthSession);
+    const session: AuthSession = { ...base, ...overrides };
+    useAuthStore.getState().applySession(session);
+    return clone(session);
+  }
+
+  async register(input: RegisterInput): Promise<AuthSession> {
+    await simulate({ safe: true });
+    const email = input.email.trim().toLowerCase();
+    if (email === fxa.mockAuthSession.user.email) {
+      throw new ApiError("email_taken", "an account already exists for this email address", 409, {
+        field: "email",
+      });
+    }
+    return this.mockSession({
+      accessToken: uid("mock_token"),
+      user: {
+        id: uid("usr"),
+        email,
+        fullName: input.fullName?.trim() || null,
+        isActive: true,
+        lastLoginAt: now(),
+        createdAt: now(),
+      },
+      workspaces: [
+        {
+          workspaceId: uid("ws"),
+          businessId: uid("biz"),
+          businessName: input.workspaceName?.trim() || "My Business",
+          role: "owner",
+          isPrimary: true,
+        },
+      ],
+      activeWorkspaceId: null,
+    });
+  }
+
+  async login(input: LoginInput): Promise<AuthSession> {
+    await simulate({ safe: true });
+    // One message for both failure modes, exactly like the backend.
+    if (input.email.trim().toLowerCase() !== fxa.mockAuthSession.user.email || input.password.length < 8) {
+      throw new ApiError("unauthorized", "email or password is incorrect", 401, { reason: "invalid_credentials" });
+    }
+    return this.mockSession({ accessToken: uid("mock_token") });
+  }
+
+  async refreshSession(): Promise<AuthSession> {
+    await simulate({ safe: true });
+    return this.mockSession({ accessToken: uid("mock_token") });
+  }
+
+  async logout(): Promise<LogoutResult> {
+    await simulate({ safe: true });
+    useAuthStore.getState().clear();
+    return { revoked: true };
+  }
+
+  async getSession(): Promise<SessionInfo> {
+    await simulate({ safe: true });
+    const info = clone(fxa.mockSessionInfo);
+    useAuthStore.getState().applySessionInfo(info);
+    return info;
+  }
+
+  /* -------------------------------------------------------- business profile */
+
+  async getBusinessProfileForm(): Promise<BusinessProfileForm> {
+    await simulate({ safe: true });
+    return clone(state.businessProfile);
+  }
+
+  /** Exclude-unset, like the backend: an absent key leaves the stored value alone. */
+  async updateBusinessProfile(input: BusinessProfileUpdateInput): Promise<BusinessProfileForm> {
+    await simulate();
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+      if (value === undefined) continue;
+      (state.businessProfile as unknown as Record<string, unknown>)[key] = value;
+    }
+    state.businessProfile.updatedAt = now();
+    return clone(state.businessProfile);
+  }
+
+  /* ------------------------------------------------------------------ memory */
+
+  async listMemoryItems(input?: ListMemoryItemsInput): Promise<MemoryItemList> {
+    await simulate({ safe: true });
+    const q = input?.q?.trim().toLowerCase();
+    let items = [...state.memory];
+    if (input?.kind) items = items.filter((i) => i.kind === input.kind);
+
+    if (q) {
+      // Deterministic stand-in for embedding similarity: token overlap, so the
+      // UI still has to render a `score` and cannot assume substring matching.
+      items = items
+        .map((item) => {
+          const words = new Set(item.text.toLowerCase().split(/\W+/).filter(Boolean));
+          const hits = q.split(/\W+/).filter(Boolean).filter((w) => words.has(w)).length;
+          return { item, score: hits === 0 ? 0.05 : Math.min(0.99, 0.2 + hits * 0.22) };
+        })
+        .sort((a, b) => b.score - a.score)
+        .map(({ item, score }) => ({ ...item, score }));
+      items = items.filter((i) => (i.score ?? 0) > 0);
+    } else {
+      items.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+      items = items.map((i) => ({ ...i, score: null }));
+    }
+
+    const limit = input?.limit ?? 50;
+    return {
+      items: clone(items.slice(0, limit)),
+      total: items.length,
+      limit,
+      kind: input?.kind ?? null,
+      query: q || null,
+      mode: q ? "similar" : "recent",
+    };
+  }
+
+  async createMemoryItem(input: CreateMemoryItemInput): Promise<MemoryItem> {
+    await simulate();
+    const item: MemoryItem = {
+      id: uid("mem"),
+      businessId: state.businessProfile.businessId,
+      kind: input.kind,
+      text: input.text,
+      metadata: input.metadata ?? {},
+      campaignId: input.campaignId ?? null,
+      createdAt: now(),
+      score: null,
+    };
+    state.memory.unshift(item);
+    return clone(item);
+  }
+
+  async updateMemoryItem(input: UpdateMemoryItemInput): Promise<MemoryItem> {
+    await simulate();
+    const item = findOr404(state.memory, input.id, "Memory item");
+    if (input.text !== undefined) item.text = input.text;
+    if (input.metadata !== undefined) item.metadata = input.metadata ?? {};
+    return clone(item);
+  }
+
+  async deleteMemoryItem(id: string): Promise<{ id: string }> {
+    await simulate();
+    state.memory = state.memory.filter((m) => m.id !== id);
+    return { id };
+  }
+
+  async reindexMemory(kind?: string): Promise<MemoryReindexResult> {
+    await simulate();
+    const targets = kind ? state.memory.filter((m) => m.kind === kind) : state.memory;
+    return { reindexed: targets.length, kind: kind ?? null, itemIds: targets.map((m) => m.id) };
+  }
+
+  /* -------------------------------------------------------------- connectors */
+
+  async getConnectorSettings(): Promise<ConnectorSettings> {
+    await simulate({ safe: true });
+    return clone(state.connectors);
+  }
+
+  private connectorOr404(name: string): Connector {
+    const found = state.connectors.connectors.find((c) => c.connector === name);
+    if (!found) {
+      throw new ApiError("not_found", `connector '${name}' does not exist`, 404, {
+        known: state.connectors.connectors.map((c) => c.connector),
+      });
+    }
+    return found;
+  }
+
+  async updateConnector(name: string, patch: ConnectorUpdateInput): Promise<Connector> {
+    await simulate();
+    const connector = this.connectorOr404(name);
+    const known = new Set(connector.fields.map((f) => f.key));
+    for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+      if (value === undefined) continue;
+      if (!known.has(key)) {
+        throw new ApiError("validation_failed", `field '${key}' does not belong to connector '${name}'`, 422, {
+          accepted: Array.from(known),
+        });
+      }
+      const target = connector.fields.find((f) => f.key === key)!;
+      const cleared = value === null || value === "";
+      target.value = cleared || target.secret ? null : String(value);
+      target.hasValue = !cleared;
+      target.masked = !cleared && target.secret ? "••••••••" : null;
+      target.source = cleared ? "unset" : "workspace";
+    }
+    connector.hasOverride = connector.fields.some((f) => f.source === "workspace");
+    connector.source = connector.hasOverride ? "workspace" : connector.source;
+    connector.configured = connector.fields.filter((f) => f.required).every((f) => f.hasValue || f.value !== null);
+    state.connectors.overrideCount = state.connectors.connectors.filter((c) => c.hasOverride).length;
+    return clone(connector);
+  }
+
+  async deleteConnector(name: string): Promise<ConnectorDeleteResult> {
+    await simulate();
+    const connector = this.connectorOr404(name);
+    for (const f of connector.fields) {
+      f.value = null;
+      f.hasValue = false;
+      f.masked = null;
+      f.source = "env";
+    }
+    connector.hasOverride = false;
+    connector.source = "env";
+    connector.configured = false;
+    state.connectors.overrideCount = state.connectors.connectors.filter((c) => c.hasOverride).length;
+    return { connector: name, removed: true, source: "env", configured: false };
+  }
+
+  async getLlmSettings(): Promise<LlmSettings> {
+    await simulate({ safe: true });
+    return clone(this.llmSettings);
+  }
+
+  async updateLlmSettings(input: LlmSettingsUpdateInput): Promise<LlmSettings> {
+    await simulate();
+    for (const tier of ["fast", "strong"] as const) {
+      const patch = input[tier];
+      if (!patch) continue;
+      const current = this.llmSettings[tier];
+      this.llmSettings[tier] = {
+        ...current,
+        provider: patch.provider ?? current.provider,
+        model: patch.model ?? current.model,
+        baseUrl: patch.baseUrl ?? current.baseUrl,
+        keyConfigured: patch.apiKey === null ? false : patch.apiKey ? true : current.keyConfigured,
+        keySource: patch.apiKey === null ? "missing" : patch.apiKey ? "workspace" : current.keySource,
+        extraHeadersConfigured: patch.extraHeaders === null ? false : patch.extraHeaders ? Object.keys(patch.extraHeaders).length > 0 : current.extraHeadersConfigured,
+        extraHeadersSource: patch.extraHeaders === null ? "missing" : patch.extraHeaders ? Object.keys(patch.extraHeaders).length > 0 ? "workspace" : "missing" : current.extraHeadersSource,
+      };
+    }
+    this.llmSettings.hasWorkspaceOverride = true;
+    return clone(this.llmSettings);
+  }
+
+  /* ----------------------------------------------------------- usage & audit */
+
+  async getUsage(period: UsagePeriod = "today"): Promise<Usage> {
+    await simulate({ safe: true });
+    return clone(fxa.mockUsage[period] ?? fxa.mockUsage.today);
+  }
+
+  async getAudit(filters?: AuditFilters): Promise<AuditList> {
+    await simulate({ safe: true });
+    const entries = state.audit.entries.filter((e) => {
+      if (filters?.entityType && e.entityType !== filters.entityType) return false;
+      if (filters?.entityId && e.entityId !== filters.entityId) return false;
+      if (filters?.actor && e.actor !== filters.actor) return false;
+      if (filters?.action && e.action !== filters.action) return false;
+      return true;
+    });
+    const limit = filters?.limit ?? 50;
+    return {
+      entries: clone(entries.slice(0, limit)),
+      limit,
+      total: state.audit.total,
+      entityType: filters?.entityType ?? null,
+      entityId: filters?.entityId ?? null,
+      actor: filters?.actor ?? null,
+    };
   }
 }

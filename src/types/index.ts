@@ -5,7 +5,12 @@ import { z } from "zod";
 /* ------------------------------------------------------------------ */
 
 export const IdSchema = z.string().min(1);
-export const IsoDateSchema = z.string().datetime({ offset: true });
+/**
+ * Loose on purpose. The backend serialises `datetime` values in several shapes
+ * (offset-aware from Postgres, naive from SQLite) and asset fields can be
+ * `data:` URLs, so a strict `.datetime()` / `.url()` check rejects valid data.
+ */
+export const IsoDateSchema = z.string().min(1);
 export const LocaleSchema = z.enum(["en", "ar"]);
 export type Locale = z.infer<typeof LocaleSchema>;
 
@@ -17,7 +22,7 @@ export const BusinessSchema = z.object({
   id: IdSchema,
   name: z.string(),
   industry: z.string(),
-  website: z.string().url().optional(),
+  website: z.string().optional(),
   country: z.string().length(2),
   description: z.string(),
   createdAt: IsoDateSchema,
@@ -31,7 +36,7 @@ export const BrandProfileSchema = z.object({
   values: z.array(z.string()),
   primaryColor: z.string(),
   secondaryColor: z.string().optional(),
-  logoUrl: z.string().url().optional(),
+  logoUrl: z.string().optional(),
   tagline: z.string().optional(),
   doNotUse: z.array(z.string()).default([]),
   languages: z.array(LocaleSchema),
@@ -72,9 +77,9 @@ export const CreativeSchema = z.object({
   title: z.string(),
   status: CreativeStatusSchema,
   /** For image/video: URL of the asset. For copy: undefined. */
-  assetUrl: z.string().url().optional(),
+  assetUrl: z.string().optional(),
   /** Thumbnail / preview URL (image or video poster). */
-  thumbnailUrl: z.string().url().optional(),
+  thumbnailUrl: z.string().optional(),
   headline: z.string().optional(),
   primaryText: z.string().optional(),
   cta: z.string().optional(),
@@ -185,7 +190,7 @@ export type CampaignDraft = z.infer<typeof CampaignDraftSchema>;
 
 export const ReferenceAnalysisSchema = z.object({
   id: IdSchema,
-  sourceUrl: z.string().url().optional(),
+  sourceUrl: z.string().optional(),
   sourceName: z.string(),
   kind: CreativeKindSchema,
   hook: z.string(),
@@ -422,6 +427,22 @@ export const ErrorBlockSchema = z.object({
   retryable: z.boolean().default(true),
 });
 
+/** Brand-memory context the backend consulted to answer. */
+export const ContextUsedBlockSchema = z.object({
+  type: z.literal("context_used"),
+  items: z.array(
+    z.object({
+      kind: z.string(),
+      label: z.string(),
+      detail: z.string().default(""),
+      similarity: z.number().optional(),
+      memoryId: z.string().optional(),
+    }),
+  ),
+  tokenEstimate: z.number().int().nonnegative().default(0),
+  truncated: z.boolean().default(false),
+});
+
 export const MessageBlockSchema = z.discriminatedUnion("type", [
   TextBlockSchema,
   FindingsBlockSchema,
@@ -429,6 +450,7 @@ export const MessageBlockSchema = z.discriminatedUnion("type", [
   MetricBlockSchema,
   ActionCardBlockSchema,
   TaskProgressBlockSchema,
+  ContextUsedBlockSchema,
   QuestionWithOptionsBlockSchema,
   ErrorBlockSchema,
 ]);
@@ -549,6 +571,14 @@ export const SendMessageOutputSchema = z.object({
   assistantMessage: MessageSchema,
 });
 export type SendMessageOutput = z.infer<typeof SendMessageOutputSchema>;
+
+export type AssistantProgressEvent = {
+  type: "started" | "conversation_started" | "step_started" | "tool_called" | "tool_result" | "failed";
+  step?: string;
+  detail?: string;
+  status?: string;
+  conversationId?: string;
+};
 
 export const ApplyRecommendationInputSchema = z.object({
   recommendationId: IdSchema,
@@ -702,7 +732,44 @@ export type AgentTone = z.infer<typeof AgentToneSchema>;
 export const AgentAutonomySchema = z.enum(["ask_first", "suggest", "auto_draft"]);
 export type AgentAutonomy = z.infer<typeof AgentAutonomySchema>;
 
-export const AgentToolSchema = z.union([ResearchToolSchema, TextToolSchema, z.enum(["generate_campaign_strategy", "generate_marketing_strategy", "generate_content_calendar", "generate_ad_variations", "search_web", "publish_meta_ads", "analyze_performance"])]);
+// Keep this contract aligned with the backend persona catalog. The backend
+// exposes the executable tool ids directly (for example `web_search` and
+// `get_brand_context`), while the research/text schemas above also describe
+// user-facing workflow names used elsewhere in the UI.
+export const AgentToolSchema = z.enum([
+  "analyze_website",
+  "analyze_competitor",
+  "analyze_social_profile",
+  "analyze_market",
+  "analyze_reviews",
+  "analyze_keywords",
+  "analyze_competitor_creatives",
+  "detect_market_gaps",
+  "generate_creative_brief",
+  "generate_commercial_script",
+  "generate_image_prompt",
+  "generate_video_prompt",
+  "generate_ad_copy",
+  "generate_campaign_strategy",
+  "generate_marketing_strategy",
+  "generate_content_calendar",
+  "generate_ad_variations",
+  "search_web",
+  "publish_meta_ads",
+  "analyze_performance",
+  "web_search",
+  "get_social_profile",
+  "get_reviews",
+  "get_keywords",
+  "get_competitor_ads",
+  "get_brand_context",
+  "save_learning",
+  "analyze_reference_creative",
+  "generate_image",
+  "get_campaign_insights",
+  "get_breakdowns",
+  "create_recommendation",
+]);
 export type AgentTool = z.infer<typeof AgentToolSchema>;
 
 export const AgentSchema = z.object({
@@ -730,3 +797,413 @@ export const UpdateAgentInputSchema = z.object({
   patch: AgentSchema.pick({ name: true, emoji: true, persona: true, allowedTools: true, autonomy: true, enabled: true }).partial(),
 });
 export type UpdateAgentInput = z.infer<typeof UpdateAgentInputSchema>;
+
+/* ------------------------------------------------------------------ */
+/* Auth, workspaces & admin surfaces (P1 auth UI, P3 admin panel)      */
+/* ------------------------------------------------------------------ */
+
+/** Roles come straight from the backend membership row; unknown values degrade to `viewer`. */
+export const RoleSchema = z.enum(["owner", "member", "viewer"]);
+export type Role = z.infer<typeof RoleSchema>;
+
+export const AuthUserSchema = z.object({
+  id: IdSchema,
+  email: z.string(),
+  fullName: z.string().nullable().default(null),
+  isActive: z.boolean().default(true),
+  lastLoginAt: IsoDateSchema.nullable().optional(),
+  createdAt: IsoDateSchema.nullable().optional(),
+});
+export type AuthUser = z.infer<typeof AuthUserSchema>;
+
+export const WorkspaceMembershipSchema = z.object({
+  workspaceId: IdSchema,
+  businessId: IdSchema,
+  businessName: z.string(),
+  role: RoleSchema,
+  isPrimary: z.boolean().default(false),
+});
+export type WorkspaceMembership = z.infer<typeof WorkspaceMembershipSchema>;
+
+/** `POST /auth/register|login|refresh` — the token plus everything needed to render the shell. */
+export const AuthSessionSchema = z.object({
+  accessToken: z.string().min(1),
+  tokenType: z.string().default("Bearer"),
+  expiresIn: z.number().int().nonnegative().default(0),
+  user: AuthUserSchema,
+  workspaces: z.array(WorkspaceMembershipSchema).default([]),
+  activeWorkspaceId: z.string().nullable().default(null),
+});
+export type AuthSession = z.infer<typeof AuthSessionSchema>;
+
+/** `GET /auth/me` — identity without a token, used as the boot check. */
+export const SessionInfoSchema = z.object({
+  user: AuthUserSchema,
+  workspaces: z.array(WorkspaceMembershipSchema).default([]),
+  activeWorkspaceId: z.string().nullable().default(null),
+  activeRole: RoleSchema.nullable().default(null),
+});
+export type SessionInfo = z.infer<typeof SessionInfoSchema>;
+
+export const LogoutResultSchema = z.object({ revoked: z.boolean() });
+export type LogoutResult = z.infer<typeof LogoutResultSchema>;
+
+/**
+ * Client-side mirror of the backend password policy (P1.1 / P1.3) so a bad
+ * password is caught before the round trip. The server stays authoritative —
+ * this only removes a guaranteed 422.
+ */
+export const MIN_PASSWORD_LENGTH = 10;
+
+export const RegisterInputSchema = z.object({
+  email: z.string().min(3).max(320),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(256),
+  fullName: z.string().max(200).optional(),
+  workspaceName: z.string().min(1).max(200).optional(),
+});
+export type RegisterInput = z.infer<typeof RegisterInputSchema>;
+
+export const LoginInputSchema = z.object({
+  email: z.string().min(3).max(320),
+  password: z.string().min(1).max(256),
+});
+export type LoginInput = z.infer<typeof LoginInputSchema>;
+
+/* Business profile form ---------------------------------------------------- */
+
+/**
+ * The writable face of `GET /business/profile`. Scalars are nullable because the
+ * backend distinguishes "unset" from "empty", and the form has to preserve that.
+ */
+export const BusinessProfileFormSchema = z.object({
+  businessId: IdSchema,
+  name: z.string(),
+  industry: z.string().nullable().default(null),
+  websiteUrl: z.string().nullable().default(null),
+  country: z.string().nullable().default(null),
+  language: z.string().default("en"),
+  currency: z.string().nullable().default(null),
+  monthlyBudget: z.number().nullable().default(null),
+  dailyTokenBudget: z.number().int().nullable().default(null),
+  goals: z.array(z.string()).default([]),
+  brandVoice: z.string().nullable().default(null),
+  visualStyle: z.string().nullable().default(null),
+  targetAudience: z.string().nullable().default(null),
+  keyOffers: z.array(z.string()).default([]),
+  competitors: z.array(z.string()).default([]),
+  updatedAt: IsoDateSchema.nullable().optional(),
+});
+export type BusinessProfileForm = z.infer<typeof BusinessProfileFormSchema>;
+
+/**
+ * `PATCH /business/profile` uses **exclude-unset** semantics, and the distinction
+ * is the whole point: an omitted key leaves the stored value alone, an explicit
+ * `null` clears a scalar, and `[]`/`null` empties a list. So every field is
+ * `.optional()` (omit) *and* `.nullable()` (clear) — never give them a default,
+ * because a defaulted key would be indistinguishable from "not sent".
+ */
+export const BusinessProfileUpdateInputSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  industry: z.string().max(120).nullable().optional(),
+  websiteUrl: z.string().max(500).nullable().optional(),
+  country: z.string().max(2).nullable().optional(),
+  language: z.string().max(2).nullable().optional(),
+  currency: z.string().max(8).nullable().optional(),
+  monthlyBudget: z.number().nonnegative().nullable().optional(),
+  dailyTokenBudget: z.number().int().nonnegative().nullable().optional(),
+  goals: z.array(z.string().max(200)).max(50).nullable().optional(),
+  brandVoice: z.string().max(4000).nullable().optional(),
+  visualStyle: z.string().max(4000).nullable().optional(),
+  targetAudience: z.string().max(4000).nullable().optional(),
+  keyOffers: z.array(z.string().max(200)).max(50).nullable().optional(),
+  competitors: z.array(z.string().max(200)).max(50).nullable().optional(),
+});
+export type BusinessProfileUpdateInput = z.infer<typeof BusinessProfileUpdateInputSchema>;
+
+/* Brand memory ------------------------------------------------------------- */
+
+export const MemoryKindSchema = z.enum([
+  "voice_example",
+  "visual_style",
+  "offer",
+  "audience",
+  "competitor_note",
+  "learning",
+  "reference_analysis",
+]);
+export type MemoryKind = z.infer<typeof MemoryKindSchema>;
+
+/** The seven writable kinds, in the order the backend declares them. */
+export const MEMORY_KINDS: readonly MemoryKind[] = MemoryKindSchema.options;
+
+export const MemoryItemSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  kind: MemoryKindSchema,
+  text: z.string(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  campaignId: z.string().nullable().default(null),
+  createdAt: IsoDateSchema.nullable().optional(),
+  /** Only present on a similarity search (`GET /memory/items?q=`). */
+  score: z.number().nullable().optional(),
+});
+export type MemoryItem = z.infer<typeof MemoryItemSchema>;
+
+export const MemoryItemListSchema = z.object({
+  items: z.array(MemoryItemSchema).default([]),
+  total: z.number().int().default(0),
+  limit: z.number().int().default(50),
+  kind: z.string().nullable().default(null),
+  query: z.string().nullable().default(null),
+  /** `recent` = newest first, `similar` = embedding similarity to `q`. Never assume substring matching. */
+  mode: z.enum(["recent", "similar"]).default("recent"),
+});
+export type MemoryItemList = z.infer<typeof MemoryItemListSchema>;
+
+export const ListMemoryItemsInputSchema = z.object({
+  kind: MemoryKindSchema.optional(),
+  q: z.string().max(200).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+});
+export type ListMemoryItemsInput = z.infer<typeof ListMemoryItemsInputSchema>;
+
+export const CreateMemoryItemInputSchema = z.object({
+  kind: MemoryKindSchema,
+  text: z.string().min(1).max(4000),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  campaignId: z.string().nullable().default(null),
+});
+export type CreateMemoryItemInput = z.infer<typeof CreateMemoryItemInputSchema>;
+
+/** `kind` is intentionally not editable server-side — re-kind by delete + create. */
+export const UpdateMemoryItemInputSchema = z.object({
+  id: IdSchema,
+  text: z.string().min(1).max(4000).optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export type UpdateMemoryItemInput = z.infer<typeof UpdateMemoryItemInputSchema>;
+
+export const MemoryReindexResultSchema = z.object({
+  reindexed: z.number().int().default(0),
+  kind: z.string().nullable().default(null),
+  itemIds: z.array(z.string()).default([]),
+});
+export type MemoryReindexResult = z.infer<typeof MemoryReindexResultSchema>;
+
+/* Connectors --------------------------------------------------------------- */
+
+export const ConnectorSourceSchema = z.enum(["workspace", "env", "default", "unset"]);
+export type ConnectorSource = z.infer<typeof ConnectorSourceSchema>;
+
+/**
+ * One resolved connector field. `value` is **always null when `secret` is true** —
+ * the backend never puts a secret on the wire, so a form renders an empty password
+ * input plus a "configured" hint, never a pre-filled value.
+ */
+export const ConnectorFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  secret: z.boolean().default(false),
+  required: z.boolean().default(false),
+  maxLength: z.number().int().default(500),
+  description: z.string().default(""),
+  value: z.string().nullable().default(null),
+  hasValue: z.boolean().default(false),
+  masked: z.string().nullable().default(null),
+  source: ConnectorSourceSchema.default("unset"),
+});
+export type ConnectorField = z.infer<typeof ConnectorFieldSchema>;
+
+export const ConnectorSchema = z.object({
+  connector: z.string(),
+  label: z.string(),
+  source: ConnectorSourceSchema.default("unset"),
+  hasOverride: z.boolean().default(false),
+  configured: z.boolean().default(false),
+  provider: z.string().nullable().default(null),
+  /** True when the chosen provider returns placeholder data rather than live data. */
+  placeholder: z.boolean().default(false),
+  fields: z.array(ConnectorFieldSchema).default([]),
+  notes: z.string().default(""),
+});
+export type Connector = z.infer<typeof ConnectorSchema>;
+
+export const ConnectorSettingsSchema = z.object({
+  businessId: IdSchema,
+  environment: z.string(),
+  overrideCount: z.number().int().default(0),
+  connectors: z.array(ConnectorSchema).default([]),
+  encryptionKeyConfigured: z.boolean().default(true),
+});
+export type ConnectorSettings = z.infer<typeof ConnectorSettingsSchema>;
+
+/**
+ * `PATCH /settings/connectors/{connector}` takes one flat camelCase body for all
+ * connectors. `null` or `""` clears a stored value; an omitted key leaves it.
+ * Sending a key the addressed connector does not own is a 422, never a silent drop.
+ */
+export const ConnectorUpdateInputSchema = z.object({
+  appId: z.string().max(120).nullable().optional(),
+  appSecret: z.string().nullable().optional(),
+  adAccountId: z.string().max(120).nullable().optional(),
+  accessToken: z.string().nullable().optional(),
+  baseUrl: z.string().max(500).nullable().optional(),
+  apiKey: z.string().nullable().optional(),
+  provider: z.string().max(30).nullable().optional(),
+  login: z.string().max(200).nullable().optional(),
+  password: z.string().nullable().optional(),
+  model: z.string().max(80).nullable().optional(),
+});
+export type ConnectorUpdateInput = z.infer<typeof ConnectorUpdateInputSchema>;
+
+export const ConnectorDeleteResultSchema = z.object({
+  connector: z.string(),
+  removed: z.boolean(),
+  source: ConnectorSourceSchema.default("env"),
+  configured: z.boolean().default(false),
+});
+export type ConnectorDeleteResult = z.infer<typeof ConnectorDeleteResultSchema>;
+
+/* LLM providers ------------------------------------------------------------ */
+
+export const LlmProviderSchema = z.enum([
+  "mock", "openai", "claude", "groq", "gemini", "deepseek", "mistral",
+  "openrouter", "together", "fireworks", "perplexity", "xai", "custom",
+]);
+export type LlmProvider = z.infer<typeof LlmProviderSchema>;
+
+export const LlmTierSettingsSchema = z.object({
+  provider: LlmProviderSchema,
+  model: z.string(),
+  baseUrl: z.string().nullable().default(null),
+  keyConfigured: z.boolean().default(false),
+  keySource: z.enum(["workspace", "environment", "missing"]).default("missing"),
+  extraHeadersConfigured: z.boolean().default(false),
+  extraHeadersSource: z.enum(["workspace", "environment", "missing"]).default("missing"),
+});
+export type LlmTierSettings = z.infer<typeof LlmTierSettingsSchema>;
+
+export const LlmSettingsSchema = z.object({
+  businessId: IdSchema,
+  fast: LlmTierSettingsSchema,
+  strong: LlmTierSettingsSchema,
+  hasWorkspaceOverride: z.boolean().default(false),
+  encryptionKeyConfigured: z.boolean().default(true),
+});
+export type LlmSettings = z.infer<typeof LlmSettingsSchema>;
+
+export const LlmTierUpdateInputSchema = z.object({
+  provider: LlmProviderSchema.optional(),
+  model: z.string().max(120).nullable().optional(),
+  apiKey: z.string().nullable().optional(),
+  baseUrl: z.string().max(500).nullable().optional(),
+  extraHeaders: z.record(z.string(), z.string()).nullable().optional(),
+});
+export type LlmTierUpdateInput = z.infer<typeof LlmTierUpdateInputSchema>;
+
+export const LlmSettingsUpdateInputSchema = z.object({
+  fast: LlmTierUpdateInputSchema.optional(),
+  strong: LlmTierUpdateInputSchema.optional(),
+});
+export type LlmSettingsUpdateInput = z.infer<typeof LlmSettingsUpdateInputSchema>;
+
+/* Usage -------------------------------------------------------------------- */
+
+export const UsagePeriodSchema = z.enum(["today", "month"]);
+export type UsagePeriod = z.infer<typeof UsagePeriodSchema>;
+
+export const UsageBreakdownSchema = z.object({
+  key: z.string(),
+  tokens: z.number().int().default(0),
+  /** Share of the period total, 0..1. */
+  share: z.number().default(0),
+});
+export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
+
+/**
+ * `percentUsed` is deliberately **unclamped**: 140% must be renderable, otherwise
+ * "at the limit" and "double the limit" look identical. `burnRatePerHour` and
+ * `projectedTotalTokens` are a linear extrapolation and the UI must say so.
+ */
+export const UsageSchema = z.object({
+  workspaceId: IdSchema,
+  businessId: IdSchema,
+  period: z.string(),
+  tokensIn: z.number().int().default(0),
+  tokensOut: z.number().int().default(0),
+  totalTokens: z.number().int().default(0),
+  budgetTokens: z.number().int().default(0),
+  remainingTokens: z.number().int().default(0),
+  percentUsed: z.number().default(0),
+  exceeded: z.boolean().default(false),
+  resetAt: IsoDateSchema,
+  periodStart: IsoDateSchema,
+  calls: z.number().int().default(0),
+  burnRatePerHour: z.number().default(0),
+  projectedTotalTokens: z.number().int().default(0),
+  budgetSource: z.string().default("default"),
+  byModel: z.array(UsageBreakdownSchema).default([]),
+  byPersona: z.array(UsageBreakdownSchema).default([]),
+});
+export type Usage = z.infer<typeof UsageSchema>;
+
+/* Audit -------------------------------------------------------------------- */
+
+export const AuditEntrySchema = z.object({
+  id: IdSchema,
+  actor: z.string().default("system"),
+  action: z.string(),
+  entityType: z.string().default("recommendation"),
+  entityId: z.string().nullable().default(null),
+  businessId: z.string().nullable().default(null),
+  requestId: z.string().nullable().default(null),
+  /** Redacted server-side — never a raw secret. */
+  before: z.record(z.string(), z.unknown()).nullable().default(null),
+  after: z.record(z.string(), z.unknown()).nullable().default(null),
+  result: z.record(z.string(), z.unknown()).nullable().default(null),
+  createdAt: IsoDateSchema.nullable().optional(),
+});
+export type AuditEntry = z.infer<typeof AuditEntrySchema>;
+
+export const AuditListSchema = z.object({
+  entries: z.array(AuditEntrySchema).default([]),
+  limit: z.number().int().default(50),
+  total: z.number().int().default(0),
+  entityType: z.string().nullable().default(null),
+  entityId: z.string().nullable().default(null),
+  actor: z.string().nullable().default(null),
+});
+export type AuditList = z.infer<typeof AuditListSchema>;
+
+export const AuditFiltersSchema = z.object({
+  entityType: z.string().max(60).optional(),
+  entityId: z.string().max(64).optional(),
+  actor: z.string().max(120).optional(),
+  action: z.string().max(80).optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+});
+export type AuditFilters = z.infer<typeof AuditFiltersSchema>;
+
+/** Addresses the backend ships with a known-password list; mirrored for instant feedback. */
+export const BREACHED_PASSWORDS: readonly string[] = [
+  "password",
+  "password1",
+  "password123",
+  "1234567890",
+  "12345678901",
+  "qwertyuiop",
+  "iloveyou123",
+  "administrator",
+  "letmein1234",
+  "welcome1234",
+];
+
+export type PasswordProblem = "length" | "breached" | "whitespace";
+
+/** `null` when the password is acceptable, otherwise the reason to show. */
+export function checkPasswordPolicy(password: string): PasswordProblem | null {
+  if (password.length < MIN_PASSWORD_LENGTH) return "length";
+  if (BREACHED_PASSWORDS.includes(password.toLowerCase())) return "breached";
+  if (password.trim() !== password) return "whitespace";
+  return null;
+}

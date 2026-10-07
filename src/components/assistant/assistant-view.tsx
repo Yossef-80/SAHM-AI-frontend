@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { History, Sparkles } from "lucide-react";
+import { History, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +17,7 @@ const SUGGESTIONS = ["cpa", "competitors", "creative", "campaign"] as const;
 
 export function AssistantView({ conversationId }: { conversationId: string | null }) {
   const t = useTranslations("assistant");
-  const { query, messages, send, retry, stop, isStreaming } = useChat(conversationId);
+  const { query, messages, send, retry, stop, progress, isStreaming } = useChat(conversationId);
   const context = useAssistantStore((s) => s.context);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
   const setPendingPrompt = useAssistantStore((s) => s.setPendingPrompt);
@@ -47,8 +47,31 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
         <MessageBubble key={m.id} message={m} ctx={{ conversationId: conversationId ?? "new", onAnswer, onRetry: retry, isStreaming }} />
       ))}
       {isStreaming && messages[messages.length - 1]?.role === "user" && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Sparkles className="h-4 w-4 animate-pulse text-primary" /> {t("thinking")}
+        <div role="status" aria-live="polite" className="max-w-xl rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 font-medium text-foreground">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" /> {progress.length ? t("progressTitle") : t("thinking")}
+          </div>
+          {progress.length > 0 && (
+            <ol className="mt-2 space-y-1 border-s-2 ps-3 text-xs">
+              {progress.slice(-6).map((event, index) => {
+                const tool = event.step === "web_search"
+                  ? t("progressTools.webSearch")
+                  : event.step === "analyze_website"
+                    ? t("progressTools.website")
+                    : event.step?.replaceAll("_", " ") ?? "";
+                const label = event.type === "tool_called"
+                  ? t("progressToolStarted", { tool })
+                  : event.type === "tool_result"
+                    ? t("progressToolDone", { tool })
+                    : event.type === "failed"
+                      ? t("progressStepFailed", { step: tool || t("progressStep") })
+                      : event.type === "step_started"
+                        ? t("progressStep", { step: tool || t("progressStep") })
+                        : t("progressStarted");
+                return <li key={`${event.type}-${event.step ?? "start"}-${index}`}>{label}</li>;
+              })}
+            </ol>
+          )}
         </div>
       )}
       <div ref={bottomRef} />

@@ -1,14 +1,38 @@
 import type {
   Agent,
+  AuditFilters,
+  AuditList,
+  AuthSession,
+  BusinessProfileForm,
+  BusinessProfileUpdateInput,
+  Connector,
+  ConnectorDeleteResult,
+  ConnectorSettings,
+  ConnectorUpdateInput,
   ContentItem,
   GenerateContentCalendarInput,
   GenerateTextInput,
   GeneratedText,
   ListContentInput,
+  ListMemoryItemsInput,
+  LoginInput,
+  LlmSettings,
+  LlmSettingsUpdateInput,
+  LogoutResult,
+  MemoryItem,
+  MemoryItemList,
+  MemoryReindexResult,
+  CreateMemoryItemInput,
+  RegisterInput,
+  SessionInfo,
   UpdateAgentInput,
   UpdateContentItemInput,
+  UpdateMemoryItemInput,
+  Usage,
+  UsagePeriod,
   AddToCampaignInput,
   AgentTask,
+  AssistantProgressEvent,
   AnalyzeReferenceInput,
   Audience,
   ApplyRecommendationInput,
@@ -56,9 +80,22 @@ export class ApiError extends Error {
  * See docs/API_CONTRACT.md for the schema of every method.
  */
 export interface MarketingApi {
+  /* Auth (P1). The only routes that do not carry an Authorization header. */
+  register(input: RegisterInput): Promise<AuthSession>;
+  login(input: LoginInput): Promise<AuthSession>;
+  /** Rotates the stored token; the previous one is revoked server-side. */
+  refreshSession(): Promise<AuthSession>;
+  /** Idempotent: an unknown or already-revoked token still resolves `{revoked:false}`. */
+  logout(): Promise<LogoutResult>;
+  /** `GET /auth/me` — the boot check. 401 without a valid token. */
+  getSession(): Promise<SessionInfo>;
+
   /* Business & brand */
   getBusiness(): Promise<Business>;
   getBrandProfile(): Promise<BrandProfile>;
+  /** Exclude-unset patch: omitted keys are left alone, `null` clears. */
+  getBusinessProfileForm(): Promise<BusinessProfileForm>;
+  updateBusinessProfile(input: BusinessProfileUpdateInput): Promise<BusinessProfileForm>;
 
   /* Campaigns */
   listCampaigns(input?: ListCampaignsInput): Promise<Campaign[]>;
@@ -93,7 +130,11 @@ export interface MarketingApi {
    * Streaming-ready: yields progressively updated assistant messages.
    * MockApi simulates chunked text; HttpApi will read SSE / ReadableStream.
    */
-  streamMessage(input: SendMessageInput): AsyncIterable<SendMessageOutput>;
+  streamMessage(
+    input: SendMessageInput,
+    onProgress?: (event: AssistantProgressEvent) => void,
+    signal?: AbortSignal,
+  ): AsyncIterable<SendMessageOutput>;
 
   /* Agent tasks */
   startTask(input: StartTaskInput): Promise<AgentTask>;
@@ -121,4 +162,23 @@ export interface MarketingApi {
   /* Settings */
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
+
+  /* Connectors (P2.4) */
+  getConnectorSettings(): Promise<ConnectorSettings>;
+  updateConnector(connector: string, patch: ConnectorUpdateInput): Promise<Connector>;
+  deleteConnector(connector: string): Promise<ConnectorDeleteResult>;
+  getLlmSettings(): Promise<LlmSettings>;
+  updateLlmSettings(input: LlmSettingsUpdateInput): Promise<LlmSettings>;
+
+  /* Brand memory (P2.2) */
+  listMemoryItems(input?: ListMemoryItemsInput): Promise<MemoryItemList>;
+  createMemoryItem(input: CreateMemoryItemInput): Promise<MemoryItem>;
+  updateMemoryItem(input: UpdateMemoryItemInput): Promise<MemoryItem>;
+  deleteMemoryItem(id: string): Promise<{ id: string }>;
+  /** `kind` omitted means every kind. */
+  reindexMemory(kind?: string): Promise<MemoryReindexResult>;
+
+  /* Usage & audit (P4.1 / P4.4) */
+  getUsage(period?: UsagePeriod): Promise<Usage>;
+  getAudit(filters?: AuditFilters): Promise<AuditList>;
 }

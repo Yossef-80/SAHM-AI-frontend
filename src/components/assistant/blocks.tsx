@@ -17,6 +17,7 @@ import {
   MessageBlockSchema,
   type ActionCardBlock,
   type AnyBlock,
+  type ContextUsedBlock,
   type ErrorBlock,
   type FindingsBlock,
   type MessageBlock,
@@ -60,6 +61,8 @@ function KnownBlock({ block, ctx }: { block: MessageBlock; ctx: BlockContext }) 
       return <ActionCardBlockView block={block} />;
     case "task_progress":
       return <TaskProgressBlockView block={block} ctx={ctx} />;
+    case "context_used":
+      return <ContextUsedBlockView block={block} />;
     case "question_with_options":
       return <QuestionBlockView block={block} ctx={ctx} />;
     case "error":
@@ -76,8 +79,10 @@ function KnownBlock({ block, ctx }: { block: MessageBlock; ctx: BlockContext }) 
 /* ------------------------------------------------------------------ */
 
 function renderInline(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  const parts = text.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g);
   return parts.map((p, i) => {
+    const link = p.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    if (link) return <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">{link[1]}</a>;
     if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
     if (p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
     if (p.startsWith("`") && p.endsWith("`"))
@@ -90,12 +95,128 @@ function renderInline(text: string): ReactNode[] {
   });
 }
 
+function tableCells(line: string): string[] {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
+}
+
+function isTableDivider(line: string): boolean {
+  const cells = tableCells(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
+}
+
+function renderMarkdown(text: string): ReactNode[] {
+  const normalized = text
+    .replace(/\\?<br\s*\/?\s*>/gi, "\n")
+    .replace(/\\\|/g, "|")
+    .replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const nodes: ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+    if (/^(---+|___+|\*\*\*+)$/.test(line)) {
+      nodes.push(<hr key={`hr-${i}`} className="my-3 border-border" />);
+      i++;
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const depth = heading[1].length;
+      const Heading = (`h${Math.min(depth, 4)}`) as "h1" | "h2" | "h3" | "h4";
+      nodes.push(<Heading key={`h-${i}`} className="mt-3 text-base font-semibold first:mt-0">{renderInline(heading[2])}</Heading>);
+      i++;
+      continue;
+    }
+
+    if (line.includes("|") && i + 1 < lines.length && isTableDivider(lines[i + 1])) {
+      const headers = tableCells(line);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim().includes("|")) rows.push(tableCells(lines[i++]));
+      nodes.push(
+        <div key={`table-${i}`} className="my-2 max-w-full overflow-x-auto rounded-md border">
+          <table className="w-full min-w-max border-collapse text-start text-xs">
+            <thead className="bg-muted/70"><tr>{headers.map((cell, index) => <th key={index} className="border-b px-3 py-2 text-start font-semibold">{renderInline(cell)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-background even:bg-muted/30">{headers.map((_, cellIndex) => <td key={cellIndex} className="max-w-sm whitespace-normal border-b px-3 py-2 align-top">{renderInline(row[cellIndex] ?? "")}</td>)}</tr>)}</tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    const unordered = line.match(/^[-*+•·]\s+(.+)$/);
+    const ordered = line.match(/^\d+(?:[.)]|(?:\uFE0F)?\u20E3)\s+(.+)$/);
+    if (unordered || ordered) {
+      const isOrdered = !!ordered;
+      const items: string[] = [];
+      while (i < lines.length) {
+        const match = lines[i].trim().match(isOrdered ? /^\d+(?:[.)]|(?:\uFE0F)?\u20E3)\s+(.+)$/ : /^[-*+•·]\s+(.+)$/);
+        if (!match) break;
+        items.push(match[1]);
+        i++;
+      }
+      const List = isOrdered ? "ol" : "ul";
+      nodes.push(<List key={`list-${i}`} className={cn("my-1 space-y-1 ps-5 text-sm", isOrdered ? "list-decimal" : "list-disc")}>{items.map((item, index) => <li key={index}>{renderInline(item)}</li>)}</List>);
+      continue;
+    }
+
+    if (line.startsWith(">")) {
+      const quote: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) quote.push(lines[i++].trim().replace(/^>\s?/, ""));
+      nodes.push(<blockquote key={`quote-${i}`} className="border-s-2 ps-3 text-sm italic text-muted-foreground">{quote.map((part, index) => <span key={index}>{index > 0 && <br />}{renderInline(part)}</span>)}</blockquote>);
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|[-*+•·]\s|\d+(?:[.)]|(?:\uFE0F)?\u20E3)\s|>\s?)/.test(lines[i].trim()) && !(lines[i].includes("|") && i + 1 < lines.length && isTableDivider(lines[i + 1]))) {
+      paragraph.push(lines[i++].trim());
+    }
+    nodes.push(<p key={`p-${i}`} className="text-sm leading-relaxed">{paragraph.map((part, index) => <span key={index}>{index > 0 && <br />}{renderInline(part)}</span>)}</p>);
+  }
+  return nodes;
+}
+
+/* ------------------------------------------------------------------ */
+/* context_used — brand memory the backend consulted                  */
+/* ------------------------------------------------------------------ */
+
+function ContextUsedBlockView({ block }: { block: ContextUsedBlock }) {
+  const t = useTranslations("assistant");
+  const [open, setOpen] = useState(false);
+  if (block.items.length === 0) return null;
+  return (
+    <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-start">
+        <span className="font-medium">
+          {t("contextUsed", { count: block.items.length })}
+        </span>
+        {block.tokenEstimate > 0 && <span>~{block.tokenEstimate} tokens</span>}
+        {block.truncated && <span className="text-amber-600">{t("contextTruncated")}</span>}
+        <span className="ms-auto">{open ? "-" : "+"}</span>
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1">
+          {block.items.map((item, i) => (
+            <li key={item.memoryId ?? `${item.kind}-${i}`} className="flex flex-col">
+              <span className="font-medium text-foreground">{item.label}</span>
+              {item.detail && <span>{item.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function TextBlockView({ block }: { block: TextBlock }) {
   return (
-    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-      {renderInline(block.text)}
+    <div className="space-y-2 text-sm leading-relaxed">
+      {renderMarkdown(block.text)}
       {block.streaming && <span className="ms-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/70 align-text-bottom" aria-hidden />}
-    </p>
+    </div>
   );
 }
 
@@ -120,10 +241,10 @@ export function FindingsBlockView({ block }: { block: FindingsBlock }) {
           {block.items.map((it, i) => (
             <li key={i} className="flex gap-2 text-sm">
               <span className="mt-0.5 shrink-0">{sentimentIcon[it.sentiment]}</span>
-              <span>
-                <span className="font-medium">{it.label}</span>
-                <span className="text-muted-foreground"> — {it.detail}</span>
-              </span>
+              <div className="min-w-0">
+                <div className="font-medium">{it.label}</div>
+                {it.detail && <div className="mt-1 space-y-1 text-muted-foreground">{renderMarkdown(it.detail)}</div>}
+              </div>
             </li>
           ))}
         </ul>
@@ -388,4 +509,3 @@ export function UnknownBlockView({ block }: { block: AnyBlock }) {
     </div>
   );
 }
-
