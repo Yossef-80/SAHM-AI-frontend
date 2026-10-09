@@ -226,38 +226,86 @@ function MarkdownReport({ content }: { content: string }) {
       continue;
     }
 
-    if (line.startsWith("## ")) {
-      elements.push(
-        <h3 key={i} className="text-xs font-bold text-foreground mt-3 mb-1.5 pb-1 border-b flex items-center gap-1.5">
-          {renderInlineMarkdown(line.slice(3))}
-        </h3>
-      );
-    } else if (line.startsWith("### ")) {
-      elements.push(
-        <h4 key={i} className="text-xs font-semibold text-foreground/90 mt-2 mb-1">
-          {renderInlineMarkdown(line.slice(4))}
-        </h4>
-      );
-    } else if (line.startsWith("> ")) {
+    // Horizontal Rule
+    if (line === "---" || line === "***" || line === "___") {
+      elements.push(<hr key={i} className="my-2.5 border-border/40" />);
+      continue;
+    }
+
+    // Markdown Headings: # through ######
+    const headingMatch = line.match(/^(#{1,6})\s*(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const headingText = headingMatch[2];
+      if (level === 1) {
+        elements.push(
+          <h2 key={i} className="text-sm font-bold text-foreground mt-4 mb-2 pb-1 border-b border-border/60 flex items-center gap-1.5">
+            {renderInlineMarkdown(headingText)}
+          </h2>
+        );
+      } else if (level === 2) {
+        elements.push(
+          <h3 key={i} className="text-xs font-bold text-foreground mt-3 mb-1.5 pb-1 border-b border-border/40 flex items-center gap-1.5">
+            {renderInlineMarkdown(headingText)}
+          </h3>
+        );
+      } else if (level === 3) {
+        elements.push(
+          <h4 key={i} className="text-xs font-semibold text-foreground/90 mt-2.5 mb-1 flex items-center gap-1">
+            {renderInlineMarkdown(headingText)}
+          </h4>
+        );
+      } else {
+        elements.push(
+          <h5 key={i} className="text-[11px] font-semibold text-foreground/80 mt-2 mb-0.5 uppercase tracking-wide">
+            {renderInlineMarkdown(headingText)}
+          </h5>
+        );
+      }
+      continue;
+    }
+
+    // Blockquotes
+    if (line.startsWith(">")) {
+      const quoteText = line.replace(/^>\s*/, "");
       elements.push(
         <div key={i} className="border-s-2 border-primary/70 bg-primary/5 px-2.5 py-1.5 rounded-r my-2 text-xs text-foreground/90">
-          {renderInlineMarkdown(line.slice(2))}
+          {renderInlineMarkdown(quoteText)}
         </div>
       );
-    } else if (line.startsWith("• ") || line.startsWith("- ") || line.startsWith("* ")) {
+      continue;
+    }
+
+    // Numbered Lists: "1. item" or "1) item"
+    const numMatch = line.match(/^(\d+)[.)]\s+(.+)$/);
+    if (numMatch) {
+      elements.push(
+        <div key={i} className="flex items-start gap-1.5 text-xs text-foreground/85 my-0.5 ms-1">
+          <span className="text-primary font-semibold text-[11px] shrink-0 min-w-[14px]">{numMatch[1]}.</span>
+          <span className="leading-relaxed">{renderInlineMarkdown(numMatch[2])}</span>
+        </div>
+      );
+      continue;
+    }
+
+    // Bullet Lists
+    const bulletMatch = line.match(/^([•\-\*])\s+(.+)$/);
+    if (bulletMatch) {
       elements.push(
         <div key={i} className="flex items-start gap-1.5 text-xs text-foreground/85 my-0.5 ms-1">
           <span className="text-primary mt-1 text-[7px] shrink-0">●</span>
-          <span className="leading-relaxed">{renderInlineMarkdown(line.slice(2))}</span>
+          <span className="leading-relaxed">{renderInlineMarkdown(bulletMatch[2])}</span>
         </div>
       );
-    } else {
-      elements.push(
-        <p key={i} className="text-xs text-foreground/85 leading-relaxed my-0.5">
-          {renderInlineMarkdown(line)}
-        </p>
-      );
+      continue;
     }
+
+    // Standard Paragraph
+    elements.push(
+      <p key={i} className="text-xs text-foreground/85 leading-relaxed my-0.5">
+        {renderInlineMarkdown(line)}
+      </p>
+    );
   }
 
   return <div className="space-y-0.5">{elements}</div>;
