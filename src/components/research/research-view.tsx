@@ -1,20 +1,35 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import Link from "next/link";
-import { useLocale, useTranslations } from "next-intl";
-import { ArrowRight, AtSign, Compass, Crosshair, Globe, Globe2, Images, KeyRound, Loader2, Search, Star, type LucideIcon } from "lucide-react";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useTranslations } from "next-intl";
+import { 
+  AlertTriangle,
+  ArrowRight, 
+  AtSign, 
+  BrainCircuit, 
+  CheckCircle2, 
+  Compass, 
+  Crosshair, 
+  ExternalLink,
+  Globe, 
+  Globe2, 
+  Images, 
+  KeyRound, 
+  Loader2, 
+  Sparkles, 
+  Star, 
+  X, 
+  type LucideIcon 
+} from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
-import { AsyncBoundary } from "@/components/shared/async-boundary";
-import { useAction } from "@/hooks/use-action";
-import { useConversations } from "@/hooks/use-api";
-import { formatDate } from "@/lib/format";
-import type { ActionType } from "@/types";
+import { getAccessToken, getActiveWorkspaceId } from "@/store/auth-store";
 
-type ToolKey =
+export type ToolKey =
   | "analyze_website"
   | "analyze_competitor"
   | "analyze_social_profile"
@@ -25,49 +40,496 @@ type ToolKey =
   | "detect_market_gaps"
   | "generate_marketing_strategy";
 
-/** Config-driven: each tool = an action type + which payload field the input fills. */
-const TOOLS: { key: ToolKey; icon: LucideIcon; action: ActionType; field: string | null; required: boolean; type?: "url" | "text" }[] = [
-  { key: "analyze_website", icon: Globe, action: "ANALYZE_WEBSITE", field: "url", required: true, type: "url" },
-  { key: "analyze_competitor", icon: Search, action: "RESEARCH_COMPETITORS", field: "query", required: false },
-  { key: "analyze_social_profile", icon: AtSign, action: "ANALYZE_SOCIAL_PROFILE", field: "handle", required: true },
-  { key: "analyze_reviews", icon: Star, action: "ANALYZE_REVIEWS", field: "source", required: false },
-  { key: "analyze_market", icon: Globe2, action: "ANALYZE_MARKET", field: "query", required: false },
-  { key: "analyze_keywords", icon: KeyRound, action: "ANALYZE_KEYWORDS", field: "seed", required: true },
-  { key: "analyze_competitor_creatives", icon: Images, action: "ANALYZE_COMPETITOR_CREATIVES", field: "competitor", required: false },
-  { key: "detect_market_gaps", icon: Crosshair, action: "DETECT_MARKET_GAPS", field: null, required: false },
-  { key: "generate_marketing_strategy", icon: Compass, action: "GENERATE_MARKETING_STRATEGY", field: "brief", required: false },
+interface SourceItem {
+  title?: string;
+  url?: string;
+}
+
+interface ResearchItem {
+  id: string;
+  tool: string;
+  query: string;
+  title: string;
+  summary: string;
+  details?: {
+    subject?: string;
+    tool?: string;
+    analyzed_at?: string;
+    sources?: SourceItem[];
+    verification_status?: "verified" | "typo_corrected" | "not_found";
+    corrected_from?: string;
+    explanation?: string;
+    [key: string]: unknown;
+  };
+  saved_to_memory?: boolean;
+  created_at: string;
+}
+
+interface ToolConfig {
+  key: ToolKey;
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+  placeholder?: string;
+  field: string | null;
+  required: boolean;
+  type?: "url" | "text";
+}
+
+const TOOLS: ToolConfig[] = [
+  { 
+    key: "analyze_website", 
+    icon: Globe, 
+    title: "Website analyzer",
+    desc: "Positioning, offers, trust signals and gaps of any site.",
+    placeholder: "https://yourbrand.com",
+    field: "url", 
+    required: true, 
+    type: "url" 
+  },
+  { 
+    key: "analyze_competitor", 
+    icon: Crosshair, 
+    title: "Competitor research",
+    desc: "Who's advertising to your audience and how.",
+    placeholder: "Competitor name or category (optional)",
+    field: "competitor", 
+    required: false 
+  },
+  { 
+    key: "analyze_social_profile", 
+    icon: AtSign, 
+    title: "Social profile",
+    desc: "Content pillars, engagement and what to post more of.",
+    placeholder: "@handle",
+    field: "handle", 
+    required: true 
+  },
+  { 
+    key: "analyze_reviews", 
+    icon: Star, 
+    title: "Reviews",
+    desc: "Themes, quotes and sentiment from customer reviews.",
+    placeholder: "Google Maps / store URL (optional)",
+    field: "url", 
+    required: false 
+  },
+  { 
+    key: "analyze_market", 
+    icon: Compass, 
+    title: "Market analysis",
+    desc: "Size, segments and trends for your category.",
+    placeholder: "Category or question (optional)",
+    field: "category", 
+    required: false 
+  },
+  { 
+    key: "analyze_keywords", 
+    icon: KeyRound, 
+    title: "Keywords",
+    desc: "Search demand clusters, intent and difficulty.",
+    placeholder: "Seed keyword, e.g. cold brew cairo",
+    field: "seed", 
+    required: true 
+  },
+  { 
+    key: "analyze_competitor_creatives", 
+    icon: Images, 
+    title: "Competitor ads",
+    desc: "Long-running competitor creatives and their hooks.",
+    placeholder: "Competitor name (optional)",
+    field: "competitor", 
+    required: false 
+  },
+  { 
+    key: "detect_market_gaps", 
+    icon: Sparkles, 
+    title: "Market gaps",
+    desc: "Unserved needs ranked by opportunity, from all research so far.",
+    placeholder: undefined,
+    field: null, 
+    required: false 
+  },
+  { 
+    key: "generate_marketing_strategy", 
+    icon: BrainCircuit, 
+    title: "Marketing strategy",
+    desc: "90-day positioning, channels, phases and KPIs.",
+    placeholder: "Anything to emphasise? (optional)",
+    field: "notes", 
+    required: false 
+  },
 ];
+
+// Helper to strip Python dict/JSON string wrappers
+function cleanClientText(raw: string): string {
+  if (!raw) return "";
+  let text = raw.trim();
+  if (
+    text.startsWith("{'type'") || 
+    text.startsWith("[{'type'") || 
+    text.startsWith('{"type"') || 
+    text.startsWith('[{"type"')
+  ) {
+    const match = text.match(/['"]text['"]\s*:\s*['"]([\s\S]*?)['"](?:\s*,\s*['"][a-zA-Z_]+['"]|\s*})/);
+    if (match) {
+      text = match[1];
+    }
+  }
+  return text.replace(/\\n/g, "\n");
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const parts = text.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g);
+  return parts.map((part, i) => {
+    const linkMatch = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a
+          key={i}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary font-medium underline underline-offset-2 hover:text-primary/80 inline-flex items-center gap-0.5"
+        >
+          {linkMatch[1]}
+          <ExternalLink className="h-2.5 w-2.5 inline shrink-0" />
+        </a>
+      );
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={i} className="italic">{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={i} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+function MarkdownReport({ content }: { content: string }) {
+  const cleaned = cleanClientText(content);
+  const lines = cleaned.split("\n");
+  const elements: React.ReactNode[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      elements.push(<div key={`sp-${i}`} className="h-1.5" />);
+      continue;
+    }
+
+    if (line.startsWith("## ")) {
+      elements.push(
+        <h3 key={i} className="text-xs font-bold text-foreground mt-3 mb-1.5 pb-1 border-b flex items-center gap-1.5">
+          {renderInlineMarkdown(line.slice(3))}
+        </h3>
+      );
+    } else if (line.startsWith("### ")) {
+      elements.push(
+        <h4 key={i} className="text-xs font-semibold text-foreground/90 mt-2 mb-1">
+          {renderInlineMarkdown(line.slice(4))}
+        </h4>
+      );
+    } else if (line.startsWith("> ")) {
+      elements.push(
+        <div key={i} className="border-s-2 border-primary/70 bg-primary/5 px-2.5 py-1.5 rounded-r my-2 text-xs text-foreground/90">
+          {renderInlineMarkdown(line.slice(2))}
+        </div>
+      );
+    } else if (line.startsWith("• ") || line.startsWith("- ") || line.startsWith("* ")) {
+      elements.push(
+        <div key={i} className="flex items-start gap-1.5 text-xs text-foreground/85 my-0.5 ms-1">
+          <span className="text-primary mt-1 text-[7px] shrink-0">●</span>
+          <span className="leading-relaxed">{renderInlineMarkdown(line.slice(2))}</span>
+        </div>
+      );
+    } else {
+      elements.push(
+        <p key={i} className="text-xs text-foreground/85 leading-relaxed my-0.5">
+          {renderInlineMarkdown(line)}
+        </p>
+      );
+    }
+  }
+
+  return <div className="space-y-0.5">{elements}</div>;
+}
 
 export function ResearchView() {
   const t = useTranslations("research");
+  const [activeResearch, setActiveResearch] = useState<ResearchItem | null>(null);
+  const [recentItems, setRecentItems] = useState<ResearchItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [pendingTool, setPendingTool] = useState<ToolKey | null>(null);
+  const [currentQuery, setCurrentQuery] = useState("");
+
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
+
+  // Fetch recent research on mount
+  const fetchRecent = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const wsId = getActiveWorkspaceId();
+      const headers: Record<string, string> = { "Accept": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (wsId) headers["X-Workspace-Id"] = wsId;
+
+      const res = await fetch(`${apiBase}/research/items`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setRecentItems(data);
+      }
+    } catch {
+      // Ignore network errors on initial mount
+    }
+  }, [apiBase]);
+
+  useEffect(() => {
+    void fetchRecent();
+  }, [fetchRecent]);
+
+  const handleRunTool = async (toolKey: ToolKey, queryValue: string) => {
+    if (loading) return;
+
+    setLoading(true);
+    setPendingTool(toolKey);
+    setCurrentQuery(queryValue.trim());
+
+    try {
+      const token = getAccessToken();
+      const wsId = getActiveWorkspaceId();
+      const headers: Record<string, string> = { 
+        "Content-Type": "application/json",
+        "Accept": "application/json" 
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (wsId) headers["X-Workspace-Id"] = wsId;
+
+      const res = await fetch(`${apiBase}/research/run`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          tool: toolKey,
+          query: queryValue.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || errJson.message || "Failed to execute research");
+      }
+
+      const data: ResearchItem = await res.json();
+      setActiveResearch(data);
+      if (data.saved_to_memory !== false) {
+        toast.success(`Intelligence report for "${queryValue || toolKey}" generated & saved!`);
+        await fetchRecent();
+      } else {
+        toast.warning(`Verification notice: Entity not verified in market.`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Research execution failed: ${msg}`);
+    } finally {
+      setLoading(false);
+      setPendingTool(null);
+    }
+  };
+
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader title={t("title")} description={t("desc")} />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+        {/* Left Side: Interactive Tools Grid */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {TOOLS.map((tool) => (
-            <ToolCard key={tool.key} tool={tool} />
+            <ToolCard
+              key={tool.key}
+              tool={tool}
+              isPending={pendingTool === tool.key && loading}
+              isAnyBusy={loading}
+              onRun={(val) => handleRunTool(tool.key, val)}
+            />
           ))}
         </div>
-        <RecentResearch />
+
+        {/* Right Side: Active Research Output & Knowledge History */}
+        <div className="space-y-4">
+          {loading && (
+            <Card className="border-primary/40 bg-primary/5 shadow-sm animate-pulse">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <CardTitle className="text-sm">Verifying & Analyzing Evidence...</CardTitle>
+                </div>
+                <CardDescription className="text-xs">
+                  Ground-truth verifying &ldquo;{currentQuery || pendingTool}&rdquo;, extracting web sources, and synthesizing intelligence.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+
+          {activeResearch && (
+            <Card className="border-primary/30 shadow-md">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    {activeResearch.saved_to_memory !== false ? (
+                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[11px] gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Saved to Brand Memory & Brain
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[11px] gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Verification Notice (Not Saved)
+                      </Badge>
+                    )}
+                    <CardTitle className="text-base font-semibold leading-tight pt-1">
+                      {activeResearch.title}
+                    </CardTitle>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    onClick={() => setActiveResearch(null)}
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Auto-Corrected Typo Callout */}
+                {activeResearch.details?.verification_status === "typo_corrected" && activeResearch.details?.corrected_from && (
+                  <div className="rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 shrink-0 text-amber-500" />
+                    <span>
+                      Auto-corrected typo from <strong>&ldquo;{String(activeResearch.details.corrected_from)}&rdquo;</strong> to <strong>&ldquo;{activeResearch.details.subject ? String(activeResearch.details.subject) : activeResearch.query}&rdquo;</strong> based on market ground truth.
+                    </span>
+                  </div>
+                )}
+
+                {/* Structured Markdown Report */}
+                <div className="rounded-lg bg-muted/40 p-4 text-xs max-h-[500px] overflow-y-auto border">
+                  <MarkdownReport content={activeResearch.summary} />
+                </div>
+
+                {/* Verified Web Sources Cards */}
+                {Array.isArray(activeResearch.details?.sources) && (activeResearch.details.sources as SourceItem[]).length > 0 && (
+                  <div className="rounded-lg border bg-background/80 p-3 space-y-2">
+                    <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
+                      <Globe2 className="h-3.5 w-3.5 text-primary" />
+                      Verified Web Sources & Citations ({(activeResearch.details.sources as SourceItem[]).length}):
+                    </span>
+                    <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+                      {(activeResearch.details.sources as SourceItem[]).map((s, idx) => (
+                        <a
+                          key={idx}
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between gap-2 p-1.5 rounded hover:bg-muted text-[11px] text-foreground hover:text-primary transition-colors group"
+                        >
+                          <span className="truncate group-hover:underline">{s.title || s.url}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground group-hover:text-primary" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t">
+                  <span className="flex items-center gap-1 font-medium text-primary">
+                    <BrainCircuit className="h-3.5 w-3.5" />
+                    {activeResearch.saved_to_memory !== false ? "Available to all AI Agents" : "Ignored from Brain Memory"}
+                  </span>
+                  <span>{activeResearch.created_at ? new Date(activeResearch.created_at).toLocaleTimeString() : ""}</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Saved Research Intelligence History */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Saved Brand Intelligence
+                </CardTitle>
+                <Badge variant="secondary" className="text-xs">
+                  {recentItems.length}
+                </Badge>
+              </div>
+              <CardDescription className="text-xs">
+                Competitor profiles and market facts stored in permanent memory.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentItems.length === 0 ? (
+                <div className="text-center py-6 text-xs text-muted-foreground">
+                  No research saved yet. Run a competitor or website search on the left to populate the brain.
+                </div>
+              ) : (
+                <ul className="divide-y max-h-[420px] overflow-y-auto">
+                  {recentItems.map((item) => (
+                    <li
+                      key={item.id}
+                      onClick={() => setActiveResearch(item)}
+                      className="py-2.5 px-2 hover:bg-muted/50 rounded-md cursor-pointer transition-colors group"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-xs font-medium group-hover:text-primary transition-colors">
+                          {item.title}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}
+                        </span>
+                      </div>
+                      <p className="line-clamp-2 text-[11px] text-muted-foreground/80 mt-1">
+                        {cleanClientText(item.summary).replace(/[#*•>]/g, "").slice(0, 110)}...
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
 }
 
-function ToolCard({ tool }: { tool: (typeof TOOLS)[number] }) {
-  const t = useTranslations("research");
-  const { dispatch, pending } = useAction();
+function ToolCard({
+  tool,
+  isPending,
+  isAnyBusy,
+  onRun,
+}: {
+  tool: (typeof TOOLS)[number];
+  isPending: boolean;
+  isAnyBusy: boolean;
+  onRun: (value: string) => void;
+}) {
   const [value, setValue] = useState("");
-  const busy = pending === tool.action;
-  const disabled = pending !== null || (tool.required && !value.trim());
+  const disabled = isAnyBusy || (tool.required && !value.trim());
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (disabled) return;
-    const payload: Record<string, unknown> = {};
-    if (tool.field && value.trim()) payload[tool.field] = value.trim();
-    void dispatch({ type: tool.action, payload });
+    onRun(value.trim());
   };
 
   return (
@@ -77,9 +539,9 @@ function ToolCard({ tool }: { tool: (typeof TOOLS)[number] }) {
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
             <tool.icon className="h-4 w-4" />
           </span>
-          <CardTitle className="text-sm">{t(`tools.${tool.key}.title`)}</CardTitle>
+          <CardTitle className="text-sm">{tool.title}</CardTitle>
         </div>
-        <p className="text-xs text-muted-foreground">{t(`tools.${tool.key}.desc`)}</p>
+        <p className="text-xs text-muted-foreground">{tool.desc}</p>
       </CardHeader>
       <CardContent className="mt-auto">
         <form onSubmit={submit} className="flex gap-2">
@@ -88,47 +550,27 @@ function ToolCard({ tool }: { tool: (typeof TOOLS)[number] }) {
               type={tool.type ?? "text"}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={t(`tools.${tool.key}.placeholder`)}
-              aria-label={t(`tools.${tool.key}.title`)}
-              className="h-9"
+              placeholder={tool.placeholder}
+              aria-label={tool.title}
+              className="h-9 text-xs"
               dir="auto"
+              disabled={isPending}
             />
           )}
-          <Button type="submit" size="sm" className="h-9 shrink-0" disabled={disabled}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4 rtl:rotate-180" />}
-            <span className="ms-1.5">{t("run")}</span>
+          <Button 
+            type="submit" 
+            size="sm" 
+            className={`h-9 shrink-0 ${!tool.field ? "w-full justify-center" : ""}`} 
+            disabled={disabled}
+          >
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+            )}
+            <span className="ms-1.5">Run</span>
           </Button>
         </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function RecentResearch() {
-  const t = useTranslations("research");
-  const locale = useLocale();
-  const q = useConversations();
-  const isResearch = (title: string) => /analy|research|market|keyword|review|gap|strategy|website|profile/i.test(title);
-  return (
-    <Card className="h-fit">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{t("recent")}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <AsyncBoundary {...q} data={q.data?.filter((c) => isResearch(c.title)).slice(0, 8)} onRetry={() => q.refetch()} emptyTitle={t("noRecent")}>
-          {(items) => (
-            <ul className="divide-y">
-              {items.map((c) => (
-                <li key={c.id}>
-                  <Link href={`/assistant/${c.id}`} className="block py-2 hover:underline">
-                    <p className="truncate text-sm font-medium">{c.title}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(c.updatedAt, locale)}</p>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </AsyncBoundary>
       </CardContent>
     </Card>
   );
