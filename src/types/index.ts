@@ -609,6 +609,7 @@ export const SendMessageInputSchema = z.object({
   conversationId: IdSchema.nullable(),
   text: z.string().min(1),
   context: z.array(ContextChipSchema).default([]),
+  language: z.enum(["en", "ar"]).optional(),
   /** Set when replying to a question_with_options block. */
   answer: z.object({ messageId: IdSchema, optionIds: z.array(z.string()) }).optional(),
 });

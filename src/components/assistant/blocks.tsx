@@ -3,11 +3,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, ExternalLink, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionButton } from "@/components/shared/action-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useTask } from "@/hooks/use-api";
@@ -287,6 +288,7 @@ const sentimentIcon = {
 };
 
 export function FindingsBlockView({ block }: { block: FindingsBlock }) {
+  const locale = useLocale();
   const items = block.items || [];
   return (
     <Card className="bg-muted/30">
@@ -295,63 +297,81 @@ export function FindingsBlockView({ block }: { block: FindingsBlock }) {
       </CardHeader>
       <CardContent>
         <div className="grid gap-3">
-          {items.map((it, i) => (
-            <div key={i} className="rounded-lg border bg-card p-3 shadow-xs space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0">{sentimentIcon[it.sentiment]}</span>
-                  <span className="font-semibold text-sm">{it.label || it.title}</span>
+          {items.map((it, i) => {
+            const allEvidence = [
+              ...(it.evidence || []),
+              ...(it.source ? [{ title: "Source", url: it.source }] : []),
+            ].filter((e): e is { title?: string; url?: string; snippet?: string; source?: string } => Boolean(e?.url || e?.title));
+
+            const uniqueSources = allEvidence.filter(
+              (ev, idx, arr) => (ev.url ? arr.findIndex((x) => x.url === ev.url) === idx : true)
+            );
+
+            return (
+              <div key={i} className="rounded-lg border bg-card p-3 shadow-xs space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0">{sentimentIcon[it.sentiment]}</span>
+                    <span className="font-semibold text-sm">{it.label || it.title}</span>
+                  </div>
+                  {it.confidence && (
+                    <Badge variant="outline" className="text-[10px] uppercase">
+                      {typeof it.confidence === "number" ? `${Math.round(it.confidence * 100)}%` : String(it.confidence)}
+                    </Badge>
+                  )}
                 </div>
-                {it.confidence && (
-                  <Badge variant="outline" className="text-[10px] uppercase">
-                    {typeof it.confidence === "number" ? `${Math.round(it.confidence * 100)}%` : String(it.confidence)}
-                  </Badge>
+                {it.detail && (
+                  <div className="text-sm text-foreground/90 leading-relaxed">
+                    {renderMarkdown(it.detail)}
+                  </div>
+                )}
+                {uniqueSources.length > 0 && (
+                  <div className="pt-2 border-t text-xs text-muted-foreground flex items-center justify-between">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          <span>{locale === "ar" ? `المصادر (${uniqueSources.length})` : `Sources (${uniqueSources.length})`}</span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" align="start" className="max-w-sm p-3 shadow-lg bg-popover text-popover-foreground">
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground border-b pb-1">
+                            {locale === "ar" ? "المصادر والمراجع" : "Referenced Sources"}
+                          </p>
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                            {uniqueSources.map((s, sIdx) => (
+                              <div key={sIdx} className="text-xs">
+                                {s.url ? (
+                                  <a
+                                    href={s.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-1 text-primary hover:underline font-medium break-all"
+                                  >
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                    <span>{s.title || safeDecodeURI(s.url)}</span>
+                                  </a>
+                                ) : (
+                                  <span className="text-foreground">{s.title}</span>
+                                )}
+                                {s.snippet && (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{s.snippet}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 )}
               </div>
-              {it.detail && (
-                <div className="text-sm text-foreground/90 leading-relaxed">
-                  {renderMarkdown(it.detail)}
-                </div>
-              )}
-              {(it.source || (it.evidence && it.evidence.length > 0)) && (
-                <div className="pt-2 border-t text-xs text-muted-foreground flex flex-wrap items-center gap-2">
-                  {it.source && (
-                    <div className="flex items-center gap-1">
-                      <span className="font-medium">Source:</span>
-                      {it.source.startsWith("http") ? (
-                        <a href={it.source} target="_blank" rel="noreferrer" className="text-primary underline hover:opacity-80">
-                          {safeDecodeURI(it.source)}
-                        </a>
-                      ) : (
-                        <span>{it.source}</span>
-                      )}
-                    </div>
-                  )}
-                  {it.evidence && it.evidence.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {it.evidence.map((ev, evIdx) => (
-                        ev.url ? (
-                          <a
-                            key={evIdx}
-                            href={ev.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-primary hover:underline hover:opacity-85"
-                          >
-                            {ev.title || safeDecodeURI(ev.url)}
-                          </a>
-                        ) : ev.title ? (
-                          <span key={evIdx} className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">
-                            {ev.title}
-                          </span>
-                        ) : null
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>

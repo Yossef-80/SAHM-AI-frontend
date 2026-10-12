@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { History, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { useChat } from "@/hooks/use-chat";
 import { useAssistantStore } from "@/store/assistant-store";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { Composer } from "./composer";
 import { ConversationList } from "./conversation-list";
 import { MessageBubble } from "./message-bubble";
@@ -17,6 +18,7 @@ const SUGGESTIONS = ["cpa", "competitors", "creative", "campaign"] as const;
 
 export function AssistantView({ conversationId }: { conversationId: string | null }) {
   const t = useTranslations("assistant");
+  const locale = useLocale() as "en" | "ar";
   const { query, messages, send, retry, stop, progress, isStreaming } = useChat(conversationId);
   const context = useAssistantStore((s) => s.context);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
@@ -29,17 +31,17 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
     if (pendingPrompt && conversationId === null && !isStreaming) {
       const p = pendingPrompt;
       setPendingPrompt(null);
-      void send({ conversationId: null, text: p.text, context: p.context });
+      void send({ conversationId: null, text: p.text, context: p.context, language: locale });
     }
-  }, [pendingPrompt, conversationId, isStreaming, send, setPendingPrompt]);
+  }, [pendingPrompt, conversationId, isStreaming, send, setPendingPrompt, locale]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
-  const onSend = (text: string) => send({ conversationId, text, context });
+  const onSend = (text: string) => send({ conversationId, text, context, language: locale });
   const onAnswer = (messageId: string, optionIds: string[], label: string) =>
-    send({ conversationId, text: label, context: [], answer: { messageId, optionIds } });
+    send({ conversationId, text: label, context: [], answer: { messageId, optionIds }, language: locale });
 
   const list = (
     <div className="flex flex-col gap-6">
@@ -110,20 +112,23 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
         <ConversationList activeId={conversationId} />
       </aside>
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b px-4 py-2 lg:hidden">
+        <header className="flex items-center justify-between border-b px-4 py-2">
           <h1 className="text-sm font-semibold">{t("title")}</h1>
-          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <History className="me-2 h-4 w-4" />
-                {t("history")}
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="start" className="w-80 p-0">
-              <SheetTitle className="sr-only">{t("history")}</SheetTitle>
-              <ConversationList activeId={conversationId} onNavigate={() => setHistoryOpen(false)} />
-            </SheetContent>
-          </Sheet>
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher compact={false} />
+            <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="sm" className="lg:hidden">
+                  <History className="me-2 h-4 w-4" />
+                  {t("history")}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="start" className="w-80 p-0">
+                <SheetTitle className="sr-only">{t("history")}</SheetTitle>
+                <ConversationList activeId={conversationId} onNavigate={() => setHistoryOpen(false)} />
+              </SheetContent>
+            </Sheet>
+          </div>
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto flex min-h-full max-w-3xl flex-col">

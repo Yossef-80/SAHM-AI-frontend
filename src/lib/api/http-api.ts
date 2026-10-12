@@ -601,6 +601,7 @@ export class HttpApi implements MarketingApi {
     return {
       conversationId: input.conversationId ?? undefined,
       message: input.text,
+      language: input.language ?? undefined,
       context: chip
         ? {
             campaignId: chip.kind === "campaign" ? chip.id : undefined,
@@ -622,8 +623,8 @@ export class HttpApi implements MarketingApi {
     );
     const asstTime = new Date(assistantMessage.createdAt).getTime();
     const userCreatedAt = isNaN(asstTime)
-      ? new Date(Date.now() - 1000).toISOString()
-      : new Date(asstTime - 1000).toISOString();
+      ? new Date(Date.now() - 3000).toISOString()
+      : new Date(asstTime - 3000).toISOString();
 
     const userMessage = this.parse(
       MessageSchema,

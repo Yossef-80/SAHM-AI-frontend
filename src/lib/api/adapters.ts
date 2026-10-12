@@ -718,8 +718,17 @@ export function sortMessagesChronologically(messages: Message[]): Message[] {
     const validA = !isNaN(timeA);
     const validB = !isNaN(timeB);
 
-    if (validA && validB && timeA !== timeB) {
-      return timeA - timeB;
+    if (validA && validB) {
+      const diff = timeA - timeB;
+      // If timestamps differ by more than 60s, respect macro chronological order
+      if (Math.abs(diff) > 60_000) {
+        return diff;
+      }
+      // Within the same conversational turn (within 60s window or clock skew):
+      // A user query MUST ALWAYS precede an assistant response
+      if (a.role === "user" && b.role !== "user") return -1;
+      if (a.role !== "user" && b.role === "user") return 1;
+      return diff;
     }
     // Deterministic tie-breaker: user query always precedes assistant response
     if (a.role === "user" && b.role !== "user") return -1;
