@@ -615,6 +615,16 @@ export class HttpApi implements MarketingApi {
 
   private mapAssistantResponse(input: SendMessageInput, payload: Json, path: string): SendMessageOutput {
     const conversationId = str(payload.conversationId, input.conversationId ?? "new");
+    const assistantMessage = this.parse(
+      MessageSchema,
+      mapMessage(payload.message, conversationId),
+      path,
+    );
+    const asstTime = new Date(assistantMessage.createdAt).getTime();
+    const userCreatedAt = isNaN(asstTime)
+      ? new Date(Date.now() - 1000).toISOString()
+      : new Date(asstTime - 1000).toISOString();
+
     const userMessage = this.parse(
       MessageSchema,
       {
@@ -623,13 +633,8 @@ export class HttpApi implements MarketingApi {
         role: "user",
         blocks: [{ type: "text", text: input.text }],
         context: input.context,
-        createdAt: new Date().toISOString(),
+        createdAt: userCreatedAt,
       },
-      path,
-    );
-    const assistantMessage = this.parse(
-      MessageSchema,
-      mapMessage(payload.message, conversationId),
       path,
     );
     const conversation = this.parse(

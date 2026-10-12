@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { sortMessagesChronologically } from "@/lib/api/adapters";
 import { qk } from "@/lib/query-keys";
 import { useAssistantStore } from "@/store/assistant-store";
 import type { Message, SendMessageInput } from "@/types";
@@ -32,10 +33,12 @@ export function useChat(conversationId: string | null) {
 
   const messages = useMemo<Message[]>(() => {
     const base = query.data?.messages ?? [];
-    if (!stream || !streamBelongsHere || stream.status === "done") return base;
+    if (!stream || !streamBelongsHere || stream.status === "done") {
+      return sortMessagesChronologically(base);
+    }
     const ids = new Set(base.map((m) => m.id));
     const extra = [stream.userMessage, stream.assistantMessage].filter((m): m is Message => !!m && !ids.has(m.id));
-    return [...base, ...extra];
+    return sortMessagesChronologically([...base, ...extra]);
   }, [query.data, stream, streamBelongsHere]);
 
   const send = useCallback(

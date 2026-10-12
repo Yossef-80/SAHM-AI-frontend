@@ -711,9 +711,26 @@ export function mapConversationSummary(raw: Json): Conversation {
   };
 }
 
+export function sortMessagesChronologically(messages: Message[]): Message[] {
+  return [...messages].sort((a, b) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    const validA = !isNaN(timeA);
+    const validB = !isNaN(timeB);
+
+    if (validA && validB && timeA !== timeB) {
+      return timeA - timeB;
+    }
+    // Deterministic tie-breaker: user query always precedes assistant response
+    if (a.role === "user" && b.role !== "user") return -1;
+    if (a.role !== "user" && b.role === "user") return 1;
+    return 0;
+  });
+}
+
 export function mapConversationDetail(raw: Json): { conversation: Conversation; messages: Message[] } {
   const id = str(raw.id);
-  const messages = asArray(raw.messages).map((m) => mapMessage(m, id));
+  const messages = sortMessagesChronologically(asArray(raw.messages).map((m) => mapMessage(m, id)));
   const last = messages[messages.length - 1];
   const preview = last ? (last.blocks.find((b) => b.type === "text") as { text?: string } | undefined)?.text ?? "" : "";
   return {
