@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { 
   AlertTriangle,
   ArrowRight, 
@@ -313,6 +313,7 @@ function MarkdownReport({ content }: { content: string }) {
 
 export function ResearchView() {
   const t = useTranslations("research");
+  const locale = useLocale();
   const [activeResearch, setActiveResearch] = useState<ResearchItem | null>(null);
   const [recentItems, setRecentItems] = useState<ResearchItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -367,6 +368,7 @@ export function ResearchView() {
         body: JSON.stringify({
           tool: toolKey,
           query: queryValue.trim(),
+          language: locale,
         }),
       });
 
