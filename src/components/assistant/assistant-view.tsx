@@ -53,7 +53,14 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
           </div>
           {progress.length > 0 && (
             <ol className="mt-2 space-y-1 border-s-2 ps-3 text-xs">
-              {progress.slice(-6).map((event, index) => {
+              {progress
+                .filter((event, index, arr) => {
+                  if (index === 0) return true;
+                  const prev = arr[index - 1];
+                  return !(prev.type === event.type && prev.step === event.step);
+                })
+                .slice(-6)
+                .map((event, index) => {
                 const tool = event.step === "web_search"
                   ? t("progressTools.webSearch")
                   : event.step === "analyze_website"

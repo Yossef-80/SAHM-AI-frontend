@@ -3,10 +3,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, Loader2, Minus, RefreshCw, XCircle } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { ActionButton } from "@/components/shared/action-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useTask } from "@/hooks/use-api";
@@ -41,13 +42,29 @@ export interface BlockContext {
 /* degrades unknown types to plain text.                               */
 /* ------------------------------------------------------------------ */
 
-export function BlockRenderer({ block, ctx }: { block: AnyBlock; ctx: BlockContext }) {
+export function BlockRenderer({
+  block,
+  ctx,
+  questionProps,
+}: {
+  block: AnyBlock;
+  ctx: BlockContext;
+  questionProps?: Partial<QuestionBlockProps>;
+}) {
   const parsed = MessageBlockSchema.safeParse(block);
   if (!parsed.success) return <UnknownBlockView block={block} />;
-  return <KnownBlock block={parsed.data} ctx={ctx} />;
+  return <KnownBlock block={parsed.data} ctx={ctx} questionProps={questionProps} />;
 }
 
-function KnownBlock({ block, ctx }: { block: MessageBlock; ctx: BlockContext }) {
+function KnownBlock({
+  block,
+  ctx,
+  questionProps,
+}: {
+  block: MessageBlock;
+  ctx: BlockContext;
+  questionProps?: Partial<QuestionBlockProps>;
+}) {
   switch (block.type) {
     case "text":
       return <TextBlockView block={block} />;
@@ -64,7 +81,7 @@ function KnownBlock({ block, ctx }: { block: MessageBlock; ctx: BlockContext }) 
     case "context_used":
       return <ContextUsedBlockView block={block} />;
     case "question_with_options":
-      return <QuestionBlockView block={block} ctx={ctx} />;
+      return <QuestionBlockView block={block} ctx={ctx} {...questionProps} />;
     case "error":
       return <ErrorBlockView block={block} ctx={ctx} />;
     default: {
@@ -75,14 +92,53 @@ function KnownBlock({ block, ctx }: { block: MessageBlock; ctx: BlockContext }) 
 }
 
 /* ------------------------------------------------------------------ */
-/* text — tiny inline markdown (bold / italic / code), streaming caret */
+/* text — tiny inline markdown (bold / italic / code / links), streaming caret */
 /* ------------------------------------------------------------------ */
 
-function renderInline(text: string): ReactNode[] {
-  const parts = text.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g);
+export function unescapeUnicode(str: string): string {
+  if (!str) return "";
+  return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => {
+    try {
+      return String.fromCharCode(parseInt(code, 16));
+    } catch {
+      return `\\u${code}`;
+    }
+  });
+}
+
+export function safeDecodeURI(uri: string): string {
+  if (!uri) return "";
+  try {
+    return decodeURI(uri);
+  } catch {
+    try {
+      return decodeURIComponent(uri);
+    } catch {
+      return uri;
+    }
+  }
+}
+
+export function renderInline(text: string): ReactNode[] {
+  const cleanText = unescapeUnicode(text);
+  const parts = cleanText.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<]+[^<.,:;"')\]\s]|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g);
   return parts.map((p, i) => {
     const link = p.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
-    if (link) return <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">{link[1]}</a>;
+    if (link) {
+      return (
+        <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:opacity-85">
+          {link[1]}
+        </a>
+      );
+    }
+    const bareUrl = p.match(/^https?:\/\/[^\s]+$/);
+    if (bareUrl) {
+      return (
+        <a key={i} href={p} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:opacity-85 break-all">
+          {safeDecodeURI(p)}
+        </a>
+      );
+    }
     if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
     if (p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
     if (p.startsWith("`") && p.endsWith("`"))
@@ -104,7 +160,7 @@ function isTableDivider(line: string): boolean {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
 }
 
-function renderMarkdown(text: string): ReactNode[] {
+export function renderMarkdown(text: string): ReactNode[] {
   const normalized = text
     .replace(/\\?<br\s*\/?\s*>/gi, "\n")
     .replace(/\\\|/g, "|")
@@ -231,23 +287,72 @@ const sentimentIcon = {
 };
 
 export function FindingsBlockView({ block }: { block: FindingsBlock }) {
+  const items = block.items || [];
   return (
     <Card className="bg-muted/30">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{block.title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <ul className="space-y-2">
-          {block.items.map((it, i) => (
-            <li key={i} className="flex gap-2 text-sm">
-              <span className="mt-0.5 shrink-0">{sentimentIcon[it.sentiment]}</span>
-              <div className="min-w-0">
-                <div className="font-medium">{it.label}</div>
-                {it.detail && <div className="mt-1 space-y-1 text-muted-foreground">{renderMarkdown(it.detail)}</div>}
+        <div className="grid gap-3">
+          {items.map((it, i) => (
+            <div key={i} className="rounded-lg border bg-card p-3 shadow-xs space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0">{sentimentIcon[it.sentiment]}</span>
+                  <span className="font-semibold text-sm">{it.label || it.title}</span>
+                </div>
+                {it.confidence && (
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {typeof it.confidence === "number" ? `${Math.round(it.confidence * 100)}%` : String(it.confidence)}
+                  </Badge>
+                )}
               </div>
-            </li>
+              {it.detail && (
+                <div className="text-sm text-foreground/90 leading-relaxed">
+                  {renderMarkdown(it.detail)}
+                </div>
+              )}
+              {(it.source || (it.evidence && it.evidence.length > 0)) && (
+                <div className="pt-2 border-t text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+                  {it.source && (
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium">Source:</span>
+                      {it.source.startsWith("http") ? (
+                        <a href={it.source} target="_blank" rel="noreferrer" className="text-primary underline hover:opacity-80">
+                          {safeDecodeURI(it.source)}
+                        </a>
+                      ) : (
+                        <span>{it.source}</span>
+                      )}
+                    </div>
+                  )}
+                  {it.evidence && it.evidence.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {it.evidence.map((ev, evIdx) => (
+                        ev.url ? (
+                          <a
+                            key={evIdx}
+                            href={ev.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-primary hover:underline hover:opacity-85"
+                          >
+                            {ev.title || safeDecodeURI(ev.url)}
+                          </a>
+                        ) : ev.title ? (
+                          <span key={evIdx} className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">
+                            {ev.title}
+                          </span>
+                        ) : null
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           ))}
-        </ul>
+        </div>
       </CardContent>
     </Card>
   );
@@ -261,6 +366,9 @@ export function RecommendationBlockView({ block }: { block: RecommendationBlock 
   const t = useTranslations("blocks");
   const tc = useTranslations("common");
   const rec = block.recommendation;
+  const hasChanges = Array.isArray(rec.changes) && rec.changes.length > 0;
+  const isActionableCampaignRec = rec.status === "pending" && rec.campaignId && rec.campaignId !== "cmp_general" && hasChanges;
+
   return (
     <Card className="border-primary/30">
       <CardHeader className="pb-2">
@@ -273,30 +381,38 @@ export function RecommendationBlockView({ block }: { block: RecommendationBlock 
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <div>
-          <p className="text-xs text-muted-foreground">{t("rationale")}</p>
-          <p>{rec.rationale}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">{t("expectedImpact")}</p>
-          <p className="font-medium">{rec.expectedImpact}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">{t("changes")}</p>
-          <ul className="space-y-1">
-            {rec.changes.map((c) => (
-              <li key={c.field} className="flex flex-wrap items-center gap-1.5 text-xs">
-                <span className="text-muted-foreground">{c.label}:</span>
-                <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-destructive line-through">{String(c.before)}</span>
-                <span>→</span>
-                <span className="rounded bg-green-500/10 px-1.5 py-0.5 font-medium text-green-700 dark:text-green-400">{String(c.after)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {rec.rationale && (
+          <div>
+            <p className="text-xs text-muted-foreground">{t("rationale")}</p>
+            <p>{rec.rationale}</p>
+          </div>
+        )}
+        {rec.expectedImpact && (
+          <div>
+            <p className="text-xs text-muted-foreground">{t("expectedImpact")}</p>
+            <p className="font-medium">{rec.expectedImpact}</p>
+          </div>
+        )}
+        {hasChanges && (
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">{t("changes")}</p>
+            <ul className="space-y-1">
+              {rec.changes.map((c) => (
+                <li key={c.field} className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="text-muted-foreground">{c.label}:</span>
+                  <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-destructive line-through">{String(c.before)}</span>
+                  <span>→</span>
+                  <span className="rounded bg-green-500/10 px-1.5 py-0.5 font-medium text-green-700 dark:text-green-400">{String(c.after)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">{tc("confidence", { value: Math.round(rec.confidence * 100) })}</span>
-          {rec.status === "pending" && <ActionButton size="sm" action={{ type: "APPLY_RECOMMENDATION", payload: { recommendationId: rec.id } }} />}
+          {isActionableCampaignRec && (
+            <ActionButton size="sm" action={{ type: "APPLY_RECOMMENDATION", payload: { recommendationId: rec.id } }} />
+          )}
         </div>
       </CardContent>
     </Card>
@@ -328,18 +444,69 @@ export function MetricBlockView({ block }: { block: MetricBlock }) {
 /* action_card                                                         */
 /* ------------------------------------------------------------------ */
 
+interface ActionCardPrefill {
+  dailyBudget?: number;
+  currency?: string;
+  durationDays?: number;
+  objective?: string;
+  audience?: {
+    name?: string;
+  };
+}
+
 export function ActionCardBlockView({ block }: { block: ActionCardBlock }) {
+  const createCampaignAction = block.actions.find((a) => a.type === "CREATE_CAMPAIGN");
+  const prefill = (createCampaignAction?.payload as { prefill?: ActionCardPrefill } | undefined)?.prefill;
+
   return (
-    <Card>
+    <Card className="border-primary/25 bg-gradient-to-b from-primary/5 to-transparent shadow-xs">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{block.title}</CardTitle>
-        {block.description && <p className="text-xs text-muted-foreground">{block.description}</p>}
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            {block.title}
+          </CardTitle>
+          {prefill && (
+            <Badge variant="outline" className="text-[11px] border-primary/30 text-primary">
+              جاهزة للإطلاق · 1-Click Ready
+            </Badge>
+          )}
+        </div>
+        {block.description && <p className="text-xs text-muted-foreground leading-relaxed mt-1">{block.description}</p>}
       </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        {block.actions.map((a, i) => (
-          <ActionButton key={i} size="sm" variant={i === 0 ? "default" : "outline"} action={a} />
-        ))}
-      </CardContent>
+      {prefill ? (
+        <CardContent className="pt-0 pb-3">
+          <div className="grid grid-cols-2 gap-2 rounded-md border bg-card/60 p-2.5 text-xs text-muted-foreground sm:grid-cols-4 mb-3">
+            <div>
+              <span className="block font-medium text-foreground">الميزانية اليومية</span>
+              <span>{prefill.dailyBudget ? `${prefill.dailyBudget} ${prefill.currency || "EGP"}/يوم` : "محسوبة آلياً"}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-foreground">المدة المقترحة</span>
+              <span>{prefill.durationDays ? `${prefill.durationDays} يوم` : "30 يوم"}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-foreground">الهدف الأساسي</span>
+              <span className="capitalize">{prefill.objective || "مبيعات مباشرة"}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-foreground">الفئة المستهدفة</span>
+              <span className="truncate block">{prefill.audience?.name || "جمهور مخصص"}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {block.actions.map((a, i) => (
+              <ActionButton key={i} size="default" variant={i === 0 ? "default" : "outline"} action={a} className={i === 0 ? "font-semibold shadow-xs" : ""} />
+            ))}
+          </div>
+        </CardContent>
+      ) : (
+        <CardContent className="flex flex-wrap gap-2">
+          {block.actions.map((a, i) => (
+            <ActionButton key={i} size="sm" variant={i === 0 ? "default" : "outline"} action={a} />
+          ))}
+        </CardContent>
+      )}
     </Card>
   );
 }
@@ -407,15 +574,50 @@ export function TaskProgressBlockView({ block, ctx }: { block: TaskProgressBlock
 /* question_with_options                                               */
 /* ------------------------------------------------------------------ */
 
-export function QuestionBlockView({ block, ctx }: { block: QuestionWithOptionsBlock; ctx: BlockContext }) {
+export interface QuestionBlockProps {
+  block: QuestionWithOptionsBlock;
+  ctx: BlockContext;
+  controlledSelected?: string[];
+  onControlledToggle?: (id: string) => void;
+  hideSubmit?: boolean;
+  questionNumber?: number;
+  totalQuestions?: number;
+  isParentSubmitted?: boolean;
+}
+
+export function QuestionBlockView({
+  block,
+  ctx,
+  controlledSelected,
+  onControlledToggle,
+  hideSubmit,
+  questionNumber,
+  totalQuestions,
+  isParentSubmitted,
+}: QuestionBlockProps) {
   const t = useTranslations("blocks");
   const ta = useTranslations("assistant");
-  const [selected, setSelected] = useState<string[]>(block.answeredOptionIds ?? []);
-  const answered = !!block.answeredOptionIds?.length;
+  const [internalSelected, setInternalSelected] = useState<string[]>(block.answeredOptionIds ?? []);
+  const selected = controlledSelected !== undefined ? controlledSelected : internalSelected;
+  const answered = !!block.answeredOptionIds?.length || !!isParentSubmitted;
+
+  const isMulti = block.multiSelect !== false && block.multi_select !== false;
 
   const toggle = (id: string) => {
     if (answered) return;
-    setSelected((prev) => (block.multiSelect ? (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]) : [id]));
+    if (onControlledToggle) {
+      onControlledToggle(id);
+      return;
+    }
+    setInternalSelected((prev) =>
+      isMulti
+        ? prev.includes(id)
+          ? prev.filter((x) => x !== id)
+          : [...prev, id]
+        : prev.includes(id)
+          ? []
+          : [id]
+    );
   };
 
   const submit = () => {
@@ -424,9 +626,19 @@ export function QuestionBlockView({ block, ctx }: { block: QuestionWithOptionsBl
   };
 
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-xs">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{block.question}</CardTitle>
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-sm font-semibold leading-snug">{block.question}</CardTitle>
+          {totalQuestions && totalQuestions > 1 && (
+            <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground shrink-0">
+              {questionNumber}/{totalQuestions}
+            </span>
+          )}
+        </div>
+        {isMulti && !answered && (
+          <p className="text-[11px] text-muted-foreground">Select one or more options</p>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid gap-2 sm:grid-cols-2">
@@ -440,16 +652,22 @@ export function QuestionBlockView({ block, ctx }: { block: QuestionWithOptionsBl
                 onClick={() => toggle(o.id)}
                 aria-pressed={on}
                 className={cn(
-                  "flex items-start gap-2 rounded-md border p-3 text-start text-sm transition-colors disabled:cursor-default",
-                  on ? "border-primary bg-primary/5" : "hover:bg-accent",
+                  "flex items-start gap-2.5 rounded-md border p-3 text-start text-sm transition-colors disabled:cursor-default",
+                  on ? "border-primary bg-primary/5 shadow-xs" : "hover:bg-accent/60",
                 )}
               >
-                <span className={cn("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border", on && "border-primary bg-primary text-primary-foreground")}>
-                  {on && <Check className="h-3 w-3" />}
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border transition-colors",
+                    isMulti ? "rounded" : "rounded-full",
+                    on ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
+                  )}
+                >
+                  {on && <Check className="h-3 w-3 stroke-[3]" />}
                 </span>
-                <span>
-                  <span className="font-medium">{o.label}</span>
-                  {o.description && <span className="block text-xs text-muted-foreground">{o.description}</span>}
+                <span className="min-w-0">
+                  <span className="font-medium text-foreground block">{o.label}</span>
+                  {o.description && <span className="block text-xs text-muted-foreground mt-0.5">{o.description}</span>}
                 </span>
               </button>
             );
@@ -457,11 +675,11 @@ export function QuestionBlockView({ block, ctx }: { block: QuestionWithOptionsBl
         </div>
         {answered ? (
           <p className="text-xs text-muted-foreground">{ta("answered")}</p>
-        ) : (
+        ) : !hideSubmit ? (
           <Button size="sm" disabled={selected.length === 0 || ctx.isStreaming} onClick={submit}>
             {t("submit")}
           </Button>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -496,16 +714,25 @@ export function ErrorBlockView({ block, ctx }: { block: ErrorBlock; ctx: BlockCo
 export function UnknownBlockView({ block }: { block: AnyBlock }) {
   const t = useTranslations("assistant");
   const type = typeof block === "object" && block && "type" in block ? String((block as { type: unknown }).type) : "unknown";
+  const rawObj = typeof block === "object" && block ? (block as Record<string, unknown>) : null;
   const text =
-    typeof block === "object" && block && "text" in block && typeof (block as { text: unknown }).text === "string"
-      ? (block as { text: string }).text
-      : typeof block === "object" && block && "title" in block && typeof (block as { title: unknown }).title === "string"
-        ? (block as { title: string }).title
+    rawObj && typeof rawObj.text === "string"
+      ? rawObj.text
+      : rawObj && typeof rawObj.title === "string"
+        ? rawObj.title
         : null;
+  const rationale = rawObj && typeof rawObj.rationale === "string" ? rawObj.rationale : null;
+
   return (
     <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-      {text ?? t("unknownBlock", { type })}
-      {text && <span className="ms-2 text-xs">({t("unknownBlock", { type })})</span>}
+      {text ? (
+        <div className="space-y-1">
+          <p className="font-medium text-foreground">{text}</p>
+          {rationale && <p className="text-xs text-muted-foreground">{rationale}</p>}
+        </div>
+      ) : (
+        <span>{t("unknownBlock", { type })}</span>
+      )}
     </div>
   );
 }

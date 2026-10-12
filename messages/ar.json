@@ -194,6 +194,7 @@
     "APPLY_RECOMMENDATION": "تطبيق التوصية",
     "ADD_TO_CAMPAIGN": "إضافة إلى حملة",
     "UPDATE_CAMPAIGN": "تحديث الحملة",
+    "UPDATE_BRAND_PROFILE": "إدارة وتحديث الملف التعريفي للبراند",
     "confirmApply": "تأكيد وتطبيق",
     "confirmTitle": "راجع التغيير قبل التطبيق",
     "confirmDescription": "سيؤثر هذا على حملة نشطة. لن يُطبَّق أي شيء قبل تأكيدك.",
@@ -268,6 +269,8 @@
     "stop": "إيقاف",
     "context": "السياق",
     "addContext": "إضافة سياق",
+    "competitors": "المنافسين",
+    "tools": "الأدوات",
     "thinking": "جارٍ العمل على طلبك…",
     "progressTitle": "جارٍ تنفيذ طلبك",
     "progressStarted": "بدأ التنفيذ",
@@ -458,7 +461,10 @@
         "launchNow": "إطلاق الآن",
         "requiresMeta": "اربط حساب Meta قبل الإطلاق.",
         "confirmTitle": "إطلاق \"{name}\"",
-        "confirmDesc": "سيبدأ الإنفاق بمعدل {budget} {currency}/يوم."
+        "confirmDesc": "سيبدأ الإنفاق بمعدل {budget} {currency}/يوم.",
+        "aiPrefilledBanner": "تم ملء بيانات الحملة تلقائياً بواسطة الذكاء الاصطناعي — راجع التفاصيل ثم اعتمد الإطلاق.",
+        "draftRestored": "تمت استعادة المسودة غير المحفوظة.",
+        "discardDraft": "حذف المسودة"
       },
       "validation": {
         "nameRequired": "يجب أن يكون الاسم حرفين على الأقل",

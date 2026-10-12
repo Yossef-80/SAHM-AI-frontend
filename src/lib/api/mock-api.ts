@@ -167,6 +167,7 @@ const TASK_STEPS: Record<ActionType, string[]> = {
   GENERATE_CONTENT_CALENDAR: ["Pick content pillars", "Schedule posts", "Write hooks"],
   GENERATE_TEXT: ["Read brand voice", "Draft", "Polish"],
   UPDATE_AGENT: ["Save"],
+  UPDATE_BRAND_PROFILE: ["Load profile", "Apply changes", "Sync memory"],
 };
 
 const taskCallbacks: Record<string, (task: AgentTask) => void> = {};

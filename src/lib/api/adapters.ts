@@ -21,7 +21,7 @@
  * is cheap to reason about and easy to test.
  */
 
-import { MEMORY_KINDS } from "@/types";
+import { ActionTypeSchema, MEMORY_KINDS } from "@/types";
 import type {
   ActionType,
   Agent,
@@ -40,6 +40,10 @@ import type {
   ConnectorField,
   ConnectorSettings,
   ConnectorSource,
+  ContentChannel,
+  ContentFormat,
+  ContentItem,
+  ContentStatus,
   Conversation,
   Creative,
   Insight,
@@ -382,16 +386,18 @@ export function mapRecommendation(raw: Json): Recommendation {
         ? "applied"
         : "dismissed";
   const changes = Array.isArray(raw.changes) ? raw.changes : [];
+  const recId = str(raw.id) || str(raw.recommendationId) || `rec_${Date.now()}`;
+  const campaignId = str(raw.campaignId) || "cmp_general";
   return {
-    id: str(raw.id),
-    campaignId: str(raw.campaignId, ""),
+    id: recId,
+    campaignId,
     title: str(raw.title, "Recommendation"),
     rationale: str(raw.rationale),
-    expectedImpact: str(raw.estimatedImpact),
-    confidence: 0.8,
+    expectedImpact: str(raw.estimatedImpact) || str(raw.expectedImpact) || "High",
+    confidence: typeof raw.confidence === "number" ? raw.confidence : 0.8,
     changes: changes.map((c) => ({
       field: str(c.field),
-      label: str(c.field).replace(/_/g, " "),
+      label: str(c.label || c.field).replace(/_/g, " "),
       before: c.before ?? null,
       after: c.after ?? null,
     })),
@@ -483,10 +489,16 @@ export function mapAgentTask(raw: Json, fallbackType = "ANALYZE_CAMPAIGN"): Agen
 
 function mapFinding(f: Json): FindingsItem {
   const confidence = f.confidence === undefined || f.confidence === null ? undefined : num(f.confidence);
+  const title = str(f.title ?? f.label, "Finding");
+  const evidence = Array.isArray(f.evidence) ? f.evidence : [];
   return {
-    label: str(f.title, "Finding"),
+    label: title,
+    title,
     detail: str(f.detail),
     sentiment: confidence === undefined ? "neutral" : confidence >= 0.7 ? "positive" : confidence < 0.4 ? "negative" : "neutral",
+    source: f.source ? String(f.source) : null,
+    confidence: confidence ?? null,
+    evidence: evidence as any,
   };
 }
 
@@ -508,26 +520,30 @@ export function mapBlock(raw: unknown): AnyBlock | null {
       return text ? ({ type: "text", text } as MessageBlock) : null;
     }
     case "findings": {
+      const items = asArray(raw.findings ?? raw.items).map((f) => mapFinding(isRecord(f) ? f : {}));
       const block: FindingsBlock = {
         type: "findings",
         title: str(raw.title, "Findings"),
-        items: asArray(raw.findings ?? raw.items).map((f) => mapFinding(isRecord(f) ? f : {})),
+        items,
+        findings: items,
       };
       return block;
     }
     case "recommendation": {
       const payload = isRecord(raw.payload) ? raw.payload : {};
+      const recId = str(raw.recommendationId) || str(raw.id) || `rec_${Date.now()}`;
+      const campId = str(payload.campaignId) || str(raw.campaignId) || "cmp_general";
       return {
         type: "recommendation",
         recommendation: mapRecommendation({
-          id: str(raw.recommendationId),
-          campaignId: payload.campaignId,
-          actionType: str(raw.actionType),
-          title: str(raw.title),
+          id: recId,
+          campaignId: campId,
+          actionType: str(raw.actionType, "general_recommendation"),
+          title: str(raw.title, "Strategic Recommendation"),
           rationale: str(raw.rationale),
-          status: raw.status,
-          estimatedImpact: raw.estimatedImpact,
-          createdAt: payload.createdAt,
+          status: raw.status || "pending",
+          estimatedImpact: str(raw.estimatedImpact) || str(raw.expectedImpact) || "High",
+          createdAt: payload.createdAt || raw.createdAt,
         }),
       } as MessageBlock;
     }
@@ -550,17 +566,59 @@ export function mapBlock(raw: unknown): AnyBlock | null {
       const payload = isRecord(raw.payload) ? raw.payload : {};
       const inputs = isRecord(raw.inputs) ? raw.inputs : {};
       const taskName = str(raw.task);
-      const block: ActionCardBlock = {
-        type: "action_card",
-        title: str(raw.label, "Suggested next step"),
-        description: (nullableStr(raw.description) ?? undefined),
-        actions: [
+      const actionType = str(raw.action_type || raw.actionType);
+      const title = str(raw.title || raw.label, "Suggested next step");
+      const desc = nullableStr(raw.description) ?? undefined;
+
+      const isBrandAction = (s: string) =>
+        /brand|profile|name|setting|identity|تسمية|اسم|إعدادات|هوية/i.test(s);
+
+      const rawActions = asArray(raw.actions);
+      let actions: ActionCardBlock["actions"] = [];
+
+      if (rawActions.length > 0) {
+        actions = rawActions.map((act) => {
+          const actType = str(act.type);
+          const actLabel = str(act.label || raw.label || "Run");
+          const actPayload = isRecord(act.payload) ? act.payload : {};
+
+          let resolvedType: ActionType = "CREATE_CAMPAIGN";
+          if (actType === "UPDATE_BRAND_PROFILE" || isBrandAction(actType) || isBrandAction(actLabel) || isBrandAction(title)) {
+            resolvedType = "UPDATE_BRAND_PROFILE";
+          } else if (TASK_TYPE_MAP[actType]) {
+            resolvedType = TASK_TYPE_MAP[actType] as ActionType;
+          } else if (TASK_TYPE_MAP[taskName]) {
+            resolvedType = TASK_TYPE_MAP[taskName] as ActionType;
+          } else if (actType && actType !== "CREATE_CAMPAIGN") {
+            resolvedType = (ActionTypeSchema.safeParse(actType).success ? actType : "UPDATE_BRAND_PROFILE") as ActionType;
+          }
+
+          return {
+            type: resolvedType,
+            label: actLabel,
+            payload: { ...payload, ...actPayload, task: taskName || actType },
+          };
+        });
+      } else {
+        const isBrand = isBrandAction(actionType) || isBrandAction(taskName) || isBrandAction(title) || isBrandAction(str(raw.label));
+        const resolvedType: ActionType = isBrand
+          ? "UPDATE_BRAND_PROFILE"
+          : (((taskName ? TASK_TYPE_MAP[taskName] : undefined) ?? (actionType ? TASK_TYPE_MAP[actionType] : undefined) ?? "CREATE_CAMPAIGN") as ActionType);
+
+        actions = [
           {
-            type: ((taskName ? TASK_TYPE_MAP[taskName] : undefined) ?? "CREATE_CAMPAIGN") as ActionType,
-            label: str(raw.label, "Run"),
+            type: resolvedType,
+            label: str(raw.label, isBrand ? "Manage Brand Profile" : "Run"),
             payload: { ...payload, ...inputs, task: taskName },
           },
-        ],
+        ];
+      }
+
+      const block: ActionCardBlock = {
+        type: "action_card",
+        title,
+        description: desc,
+        actions,
       };
       return block;
     }
@@ -631,6 +689,7 @@ export function mapMessage(raw: Json, conversationId: string): Message {
     id: str(raw.id, `msg_${Date.now()}`),
     conversationId: str(raw.conversationId, conversationId),
     role: role as Message["role"],
+    content,
     blocks,
     context: [],
     createdAt: iso(raw.createdAt),
@@ -963,6 +1022,30 @@ export function mapAuditList(raw: Json): AuditList {
     entityType: nullableStr(raw.entityType),
     entityId: nullableStr(raw.entityId),
     actor: nullableStr(raw.actor),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Content calendar                                                           */
+/* -------------------------------------------------------------------------- */
+
+export function mapContentItem(raw: Json): ContentItem {
+  return {
+    id: str(raw.id),
+    date: str(raw.date),
+    time: raw.time ? str(raw.time) : undefined,
+    channel: (str(raw.channel, "instagram") as ContentChannel),
+    format: (str(raw.format, "post") as ContentFormat),
+    title: str(raw.title, "Untitled Post"),
+    hook: raw.hook ? str(raw.hook) : undefined,
+    caption: raw.caption ? str(raw.caption) : undefined,
+    hashtags: asArray(raw.hashtags).map((h) => str(h)).filter(Boolean),
+    status: (str(raw.status, "scheduled") as ContentStatus),
+    campaignId: nullableStr(raw.campaignId),
+    creativeId: nullableStr(raw.creativeId),
+    pillar: raw.pillar ? str(raw.pillar) : undefined,
+    createdAt: iso(raw.createdAt),
+    updatedAt: iso(raw.updatedAt),
   };
 }
 

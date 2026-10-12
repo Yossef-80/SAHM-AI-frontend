@@ -14,16 +14,21 @@ import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { useBrandProfile, useBusiness, useSettings, useUpdateSettings } from "@/hooks/use-api";
 import { BusinessProfileForm } from "@/components/settings/business-profile-form";
+import { useAuthStore } from "@/store/auth-store";
+import { LogoutButton } from "@/components/layout/logout-button";
 import type { Settings } from "@/types";
 
 const useMocks = (process.env.NEXT_PUBLIC_USE_MOCKS ?? "true") !== "false";
 
 export function SettingsView() {
   const t = useTranslations("settings");
+  const ta = useTranslations("auth");
   const settings = useSettings();
   const update = useUpdateSettings();
   const business = useBusiness();
   const brand = useBrandProfile();
+  const user = useAuthStore((s) => s.user);
+  const role = useAuthStore((s) => s.activeRole);
 
   const save = (patch: Partial<Settings>) => update.mutate(patch, { onSuccess: () => toast.success(t("saved")), onError: (e) => toast.error(e.message) });
 
@@ -31,6 +36,30 @@ export function SettingsView() {
     <div className="mx-auto max-w-3xl">
       <PageHeader title={t("title")} description={t("description")} />
       <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{ta("signedInAs")}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{user?.fullName ?? user?.email ?? "User"}</p>
+              <p className="text-xs text-muted-foreground">{user?.email}</p>
+              {role && (
+                <Badge variant="outline" className="text-xs capitalize">
+                  {ta(`role.${role}`)}
+                </Badge>
+              )}
+            </div>
+            <div>
+              <LogoutButton
+                variant="outline"
+                size="default"
+                className="w-full sm:w-auto text-destructive hover:bg-destructive/10 border-destructive/30"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t("admin")}</CardTitle>

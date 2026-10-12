@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { LogOut } from "lucide-react";
@@ -21,7 +20,6 @@ import { describeError } from "@/lib/errors";
 export function UserMenu() {
   const t = useTranslations("auth");
   const te = useTranslations("errors");
-  const router = useRouter();
   const logout = useLogout();
   const user = useAuthStore((s) => s.user);
   const role = useAuthStore((s) => s.activeRole);
@@ -41,7 +39,7 @@ export function UserMenu() {
       // user in an authenticated-looking shell.
       toast.error(describeError(error, te));
     }
-    router.replace("/login");
+    window.location.assign("/login");
   };
 
   return (

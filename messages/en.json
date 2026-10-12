@@ -194,6 +194,7 @@
     "APPLY_RECOMMENDATION": "Apply recommendation",
     "ADD_TO_CAMPAIGN": "Add to campaign",
     "UPDATE_CAMPAIGN": "Update campaign",
+    "UPDATE_BRAND_PROFILE": "Manage brand profile",
     "confirmApply": "Confirm & apply",
     "confirmTitle": "Review change before applying",
     "confirmDescription": "This will change a live campaign. Nothing is applied until you confirm.",
@@ -268,6 +269,8 @@
     "stop": "Stop",
     "context": "Context",
     "addContext": "Add context",
+    "competitors": "Competitors",
+    "tools": "Tools",
     "thinking": "Working on your request…",
     "progressTitle": "Working through your request",
     "progressStarted": "Started",
@@ -458,7 +461,10 @@
         "launchNow": "Launch now",
         "requiresMeta": "Connect a Meta account before launching.",
         "confirmTitle": "Launch \"{name}\"",
-        "confirmDesc": "This will start spending {budget} {currency}/day."
+        "confirmDesc": "This will start spending {budget} {currency}/day.",
+        "aiPrefilledBanner": "Campaign details automatically pre-filled by AI — review and approve to launch.",
+        "draftRestored": "Restored unsaved draft.",
+        "discardDraft": "Discard draft"
       },
       "validation": {
         "nameRequired": "Name must be at least 2 characters",

@@ -70,7 +70,7 @@ export interface ActionDefinition<P> {
 
 const CreateCampaignPayload = z.object({
   draft: CampaignDraftSchema.optional(),
-  prefill: CampaignDraftSchema.partial().optional(),
+  prefill: z.record(z.string(), z.unknown()).optional(),
   angle: z.string().optional(),
 });
 const CreateCreativePayload = z.object({
@@ -155,7 +155,13 @@ export const actionRegistry = {
           data: campaign,
         };
       }
-      ctx.ui.setCampaignPrefill(payload.prefill ?? (payload.angle ? { name: `${payload.angle} campaign` } : null));
+      const prefill = payload.prefill ?? (payload.angle ? { name: `${payload.angle} campaign` } : null);
+      ctx.ui.setCampaignPrefill(prefill);
+      if (prefill && typeof window !== "undefined") {
+        try {
+          localStorage.setItem("sahm_campaign_wizard_prefill_pending", JSON.stringify(prefill));
+        } catch {}
+      }
       return { ok: true, navigateTo: "/campaigns/new" };
     },
   }),
@@ -383,6 +389,21 @@ export const actionRegistry = {
       const c = await ctx.api.updateCampaign({ id: payload.campaignId, patch: payload.patch });
       await invalidate(ctx.queryClient, [["campaign", c.id], ["campaigns"]]);
       return { ok: true, toastKey: "toast.campaignUpdated", toastValues: { name: c.name }, data: c };
+    },
+  }),
+
+  UPDATE_BRAND_PROFILE: define({
+    type: "UPDATE_BRAND_PROFILE",
+    labelKey: "UPDATE_BRAND_PROFILE",
+    icon: "Building2",
+    payloadSchema: z.object({
+      tab: z.string().optional(),
+      name: z.string().optional(),
+    }).passthrough(),
+    requiresConfirmation: false,
+    async handler(payload, ctx) {
+      ctx.navigate("/settings");
+      return { ok: true, navigateTo: "/settings" };
     },
   }),
 };

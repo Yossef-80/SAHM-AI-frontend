@@ -9,6 +9,7 @@ import { primaryNav, secondaryNav, isActivePath, type NavItem } from "./nav-conf
 import { LanguageSwitcher } from "./language-switcher";
 import { PortfolioSwitcher } from "./portfolio-switcher";
 import { UserMenu } from "./user-menu";
+import { LogoutButton } from "./logout-button";
 
 function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const t = useTranslations("nav");
@@ -50,9 +51,17 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}
       </nav>
-      <div className="space-y-1 border-t p-3">
+      <div className="space-y-1.5 border-t p-3">
         <UserMenu />
-        <LanguageSwitcher />
+        <div className="flex items-center justify-between gap-1 pt-1">
+          <LanguageSwitcher />
+          <LogoutButton
+            variant="ghost"
+            size="sm"
+            showLabel={true}
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          />
+        </div>
       </div>
     </div>
   );

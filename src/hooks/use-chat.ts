@@ -24,6 +24,7 @@ export function useChat(conversationId: string | null) {
   const setStream = useAssistantStore((s) => s.setStream);
   const clearContext = useAssistantStore((s) => s.clearContext);
   const abortRef = useRef<AbortController | null>(null);
+  const isSendingRef = useRef(false);
 
   const streamBelongsHere = !!stream && (
     stream.conversationId === conversationId || (!conversationId && stream.input.conversationId === null)
@@ -39,6 +40,8 @@ export function useChat(conversationId: string | null) {
 
   const send = useCallback(
     async (input: SendMessageInput) => {
+      if (isSendingRef.current) return;
+      isSendingRef.current = true;
       const controller = new AbortController();
       abortRef.current = controller;
       const optimisticUser: Message = {
@@ -91,6 +94,9 @@ export function useChat(conversationId: string | null) {
         const message = controller.signal.aborted
           ? "Request stopped."
           : err instanceof Error ? err.message : String(err);
+        if (!input.conversationId && convId && convId !== "new") {
+          router.replace(`/assistant/${convId}`);
+        }
         setStream((prev) =>
           prev
             ? {
@@ -109,6 +115,8 @@ export function useChat(conversationId: string | null) {
             : prev,
         );
         abortRef.current = null;
+      } finally {
+        isSendingRef.current = false;
       }
     },
     [clearContext, qc, router, setStream],

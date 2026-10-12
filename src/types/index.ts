@@ -238,6 +238,7 @@ export const ActionTypeSchema = z.enum([
   "GENERATE_CONTENT_CALENDAR",
   "GENERATE_TEXT",
   "UPDATE_AGENT",
+  "UPDATE_BRAND_PROFILE",
 ]);
 export type ActionType = z.infer<typeof ActionTypeSchema>;
 
@@ -259,7 +260,7 @@ export type ChangeDiff = z.infer<typeof ChangeDiffSchema>;
 
 export const RecommendationSchema = z.object({
   id: IdSchema,
-  campaignId: IdSchema,
+  campaignId: z.string().default("cmp_general"),
   title: z.string(),
   rationale: z.string(),
   expectedImpact: z.string(),
@@ -370,21 +371,66 @@ export const TextBlockSchema = z.object({
   streaming: z.boolean().optional(),
 });
 
+export const FindingItemSchema = z.object({
+  label: z.string(),
+  title: z.string().optional(),
+  detail: z.string(),
+  sentiment: z.enum(["positive", "negative", "neutral"]).default("neutral"),
+  source: z.string().nullable().optional(),
+  confidence: z.union([z.number(), z.string()]).nullable().optional(),
+  evidence: z.array(
+    z.object({
+      title: z.string().optional(),
+      url: z.string().nullable().optional(),
+      snippet: z.string().nullable().optional(),
+      source: z.string().nullable().optional(),
+    })
+  ).default([]),
+});
+export type FindingItem = z.infer<typeof FindingItemSchema>;
+
 export const FindingsBlockSchema = z.object({
   type: z.literal("findings"),
   title: z.string(),
-  items: z.array(
-    z.object({
-      label: z.string(),
-      detail: z.string(),
-      sentiment: z.enum(["positive", "negative", "neutral"]).default("neutral"),
-    }),
-  ),
+  items: z.array(FindingItemSchema),
+  findings: z.array(FindingItemSchema).optional(),
 });
+export type FindingsBlock = z.infer<typeof FindingsBlockSchema>;
 
 export const RecommendationBlockSchema = z.object({
   type: z.literal("recommendation"),
-  recommendation: RecommendationSchema,
+  recommendation: RecommendationSchema.optional(),
+  id: z.string().optional().nullable(),
+  recommendationId: z.string().optional(),
+  title: z.string().optional(),
+  rationale: z.string().optional(),
+  actionType: z.string().optional(),
+  status: z.string().optional(),
+  estimatedImpact: z.string().optional(),
+}).transform((data) => {
+  if (data.recommendation) {
+    return {
+      type: "recommendation" as const,
+      recommendation: {
+        ...data.recommendation,
+        campaignId: data.recommendation.campaignId || "cmp_general",
+      },
+    };
+  }
+  return {
+    type: "recommendation" as const,
+    recommendation: {
+      id: data.recommendationId || data.id || `rec_${Date.now()}`,
+      campaignId: "cmp_general",
+      title: data.title || "Strategic Recommendation",
+      rationale: data.rationale || "",
+      expectedImpact: data.estimatedImpact || "High",
+      confidence: 0.8,
+      changes: [],
+      status: (data.status === "applied" ? "applied" : data.status === "dismissed" ? "dismissed" : "pending") as "pending" | "applied" | "dismissed",
+      createdAt: new Date().toISOString(),
+    },
+  };
 });
 
 export const MetricBlockSchema = z.object({
@@ -417,9 +463,11 @@ export const QuestionWithOptionsBlockSchema = z.object({
   type: z.literal("question_with_options"),
   question: z.string(),
   options: z.array(z.object({ id: z.string(), label: z.string(), description: z.string().optional() })).min(2),
-  multiSelect: z.boolean().default(false),
+  multiSelect: z.boolean().default(true),
+  multi_select: z.boolean().optional(),
   answeredOptionIds: z.array(z.string()).optional(),
 });
+export type QuestionWithOptionsBlock = z.infer<typeof QuestionWithOptionsBlockSchema>;
 
 export const ErrorBlockSchema = z.object({
   type: z.literal("error"),
@@ -471,7 +519,7 @@ export const AnyBlockSchema = z.union([MessageBlockSchema, UnknownBlockSchema]);
 export type AnyBlock = z.infer<typeof AnyBlockSchema>;
 
 export const ContextChipSchema = z.object({
-  kind: z.enum(["campaign", "creative", "insight"]),
+  kind: z.enum(["campaign", "creative", "insight", "competitor"]),
   id: IdSchema,
   label: z.string(),
 });
@@ -481,6 +529,7 @@ export const MessageSchema = z.object({
   id: IdSchema,
   conversationId: IdSchema,
   role: z.enum(["user", "assistant", "system"]),
+  content: z.string().optional(),
   blocks: z.array(AnyBlockSchema),
   context: z.array(ContextChipSchema).default([]),
   createdAt: IsoDateSchema,

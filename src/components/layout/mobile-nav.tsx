@@ -11,6 +11,7 @@ import { useUiStore } from "@/store/ui-store";
 import { mobileNav, isActivePath } from "./nav-config";
 import { SidebarContent } from "./sidebar";
 import { LanguageSwitcher } from "./language-switcher";
+import { LogoutButton } from "./logout-button";
 
 export function TopBar() {
   const t = useTranslations();
@@ -33,7 +34,10 @@ export function TopBar() {
         <Sparkles className="h-4 w-4 text-primary" />
         {t("app.name")}
       </Link>
-      <LanguageSwitcher compact />
+      <div className="flex items-center gap-1">
+        <LanguageSwitcher compact />
+        <LogoutButton size="icon" showLabel={false} variant="ghost" />
+      </div>
     </header>
   );
 }

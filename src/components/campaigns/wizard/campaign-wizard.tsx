@@ -24,6 +24,8 @@ import { CreativeCard } from "@/components/creatives/creative-card";
 const STEPS = ["goal", "audience", "strategy", "creatives", "review", "launch"] as const;
 type Step = (typeof STEPS)[number];
 
+const DRAFT_STORAGE_KEY = "sahm_campaign_wizard_draft";
+
 type WizardState = {
   name: string;
   objective: CampaignObjective;
@@ -44,6 +46,64 @@ type WizardState = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>): WizardState {
+  const aud = (p.audience ?? {}) as Record<string, unknown>;
+  const rawGenders = (aud.genders ?? aud.gender) as string[] | string | undefined;
+  const rawGender = Array.isArray(rawGenders) ? rawGenders[0] : rawGenders;
+  const gender: "all" | "male" | "female" =
+    rawGender === "male" || rawGender === "female" || rawGender === "all"
+      ? rawGender
+      : rawGender === "men"
+        ? "male"
+        : rawGender === "women"
+          ? "female"
+          : "all";
+
+  const locationsStr = Array.isArray(aud.locations)
+    ? (aud.locations as string[]).join(", ")
+    : typeof aud.locations === "string"
+      ? (aud.locations as string)
+      : "Cairo, EG, Giza, EG, Alexandria, EG";
+
+  const interestsStr = Array.isArray(aud.interests)
+    ? (aud.interests as string[]).join(", ")
+    : typeof aud.interests === "string"
+      ? (aud.interests as string)
+      : "";
+
+  const rawStart = (p.startDate ?? p.start_date) as string | undefined;
+  const startDateStr = rawStart ? String(rawStart).slice(0, 10) : today();
+  
+  const rawEnd = (p.endDate ?? p.end_date) as string | undefined;
+  let endDateStr = rawEnd ? String(rawEnd).slice(0, 10) : "";
+  if (!endDateStr) {
+    const end = new Date(startDateStr);
+    const duration = Number(p.durationDays ?? p.duration_days ?? 30);
+    end.setDate(end.getDate() + (duration > 0 ? duration : 30));
+    endDateStr = end.toISOString().slice(0, 10);
+  }
+
+  const rawBudget = Number(p.dailyBudget ?? p.daily_budget ?? 500);
+
+  return {
+    name: String(p.name ?? ""),
+    objective: (p.objective as WizardState["objective"]) ?? "sales",
+    dailyBudget: Number.isFinite(rawBudget) && rawBudget > 0 ? rawBudget : 500,
+    currency: String(p.currency ?? "EGP"),
+    startDate: startDateStr,
+    endDate: endDateStr,
+    audienceName: String(aud.name ?? aud.audience_name ?? "الجمهور المستهدف للنمو والمبيعات"),
+    ageMin: Number(aud.ageMin ?? aud.age_min ?? 22),
+    ageMax: Number(aud.ageMax ?? aud.age_max ?? 45),
+    gender,
+    locations: locationsStr,
+    interests: interestsStr,
+    brief: String(p.strategy?.summary ?? p.brief ?? ""),
+    strategy: p.strategy ?? null,
+    creativeIds: p.creativeIds ?? [],
+  };
+}
+
 export function CampaignWizard() {
   const t = useTranslations("campaigns.wizard");
   const tc = useTranslations("common");
@@ -56,25 +116,137 @@ export function CampaignWizard() {
   const creatives = useCreatives();
   const meta = useMetaConnection();
 
-  const [step, setStep] = useState<Step>("goal");
-  const [state, setState] = useState<WizardState>({
-    name: prefill?.name ?? "",
-    objective: prefill?.objective ?? "sales",
-    dailyBudget: prefill?.dailyBudget ?? 500,
-    currency: prefill?.currency ?? "EGP",
-    startDate: today(),
-    endDate: "",
-    audienceName: "",
-    ageMin: 22,
-    ageMax: 45,
-    gender: "all",
-    locations: "Cairo, EG",
-    interests: "",
-    brief: "",
-    strategy: null,
-    creativeIds: [],
+  const [isAiPrefilled, setIsAiPrefilled] = useState(false);
+  const [hasDraftRestored, setHasDraftRestored] = useState(false);
+
+  const [step, setStep] = useState<Step>(() => {
+    if (prefill?.name && prefill?.audience?.name) {
+      return "review";
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const pendingRaw = localStorage.getItem("sahm_campaign_wizard_prefill_pending");
+        if (pendingRaw) {
+          const p = JSON.parse(pendingRaw);
+          if (p?.name && p?.audience?.name) return "review";
+        }
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.step && STEPS.includes(parsed.step)) return parsed.step;
+        }
+      } catch {}
+    }
+    return "goal";
   });
-  useEffect(() => () => setPrefill(null), [setPrefill]);
+
+  const [state, setState] = useState<WizardState>(() => {
+    if (prefill) {
+      return parsePrefillToState(prefill);
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const pendingRaw = localStorage.getItem("sahm_campaign_wizard_prefill_pending");
+        if (pendingRaw) {
+          const p = JSON.parse(pendingRaw);
+          return parsePrefillToState(p);
+        }
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.state) return parsed.state;
+        }
+      } catch {}
+    }
+    return {
+      name: "",
+      objective: "sales",
+      dailyBudget: 500,
+      currency: "EGP",
+      startDate: today(),
+      endDate: "",
+      audienceName: "",
+      ageMin: 22,
+      ageMax: 45,
+      gender: "all",
+      locations: "Cairo, EG",
+      interests: "",
+      brief: "",
+      strategy: null,
+      creativeIds: [],
+    };
+  });
+
+  // Handle incoming prefill updates
+  useEffect(() => {
+    let activePrefill = prefill;
+    if (!activePrefill && typeof window !== "undefined") {
+      try {
+        const pendingRaw = localStorage.getItem("sahm_campaign_wizard_prefill_pending");
+        if (pendingRaw) {
+          activePrefill = JSON.parse(pendingRaw);
+          localStorage.removeItem("sahm_campaign_wizard_prefill_pending");
+        }
+      } catch {}
+    }
+
+    if (activePrefill) {
+      const parsedState = parsePrefillToState(activePrefill);
+      setState(parsedState);
+      setIsAiPrefilled(true);
+      if (parsedState.name && parsedState.audienceName) {
+        setStep("review");
+      }
+      try {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ state: parsedState, step: "review" }));
+      } catch {}
+      setPrefill(null);
+    } else if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.state?.name || parsed?.state?.audienceName) {
+            setHasDraftRestored(true);
+          }
+        }
+      } catch {}
+    }
+  }, [prefill, setPrefill]);
+
+  // Auto-save draft changes to localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ state, step }));
+    } catch {}
+  }, [state, step]);
+
+  const discardDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {}
+    setState({
+      name: "",
+      objective: "sales",
+      dailyBudget: 500,
+      currency: "EGP",
+      startDate: today(),
+      endDate: "",
+      audienceName: "",
+      ageMin: 22,
+      ageMax: 45,
+      gender: "all",
+      locations: "Cairo, EG",
+      interests: "",
+      brief: "",
+      strategy: null,
+      creativeIds: [],
+    });
+    setStep("goal");
+    setHasDraftRestored(false);
+    setIsAiPrefilled(false);
+  };
 
   const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => setState((s) => ({ ...s, [k]: v }));
   const idx = STEPS.indexOf(step);
@@ -127,7 +299,33 @@ export function CampaignWizard() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title={t("title")} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PageHeader title={t("title")} />
+        {(hasDraftRestored || isAiPrefilled || state.name) && (
+          <Button variant="ghost" size="sm" onClick={discardDraft} className="text-muted-foreground hover:text-destructive">
+            {t("launch.discardDraft")}
+          </Button>
+        )}
+      </div>
+
+      {isAiPrefilled && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-primary">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 shrink-0" />
+            <span>{t("launch.aiPrefilledBanner")}</span>
+          </div>
+        </div>
+      )}
+
+      {hasDraftRestored && !isAiPrefilled && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-muted bg-muted/40 p-2.5 text-xs text-muted-foreground">
+          <span>{t("launch.draftRestored")}</span>
+          <button type="button" onClick={discardDraft} className="font-medium underline hover:text-destructive">
+            {t("launch.discardDraft")}
+          </button>
+        </div>
+      )}
+
       <ol className="mb-6 flex flex-wrap items-center gap-2 text-sm">
         {STEPS.map((s, i) => (
           <li key={s} className="flex items-center gap-2">
@@ -298,26 +496,68 @@ export function CampaignWizard() {
           )}
 
           {step === "review" && (
-            <dl className="grid gap-4 text-sm sm:grid-cols-2">
-              <ReviewItem label={t("review.goal")}>
-                <p className="font-medium">{state.name}</p>
-                <p className="text-muted-foreground">
-                  {to(state.objective)} · {formatCurrency(state.dailyBudget, state.currency, locale)}/day
-                </p>
-              </ReviewItem>
-              <ReviewItem label={t("review.audience")}>
-                <p className="font-medium">{state.audienceName}</p>
-                <p className="text-muted-foreground">
-                  {state.ageMin}–{state.ageMax} · {state.locations}
-                </p>
-              </ReviewItem>
-              <ReviewItem label={t("review.strategy")}>
-                <p className="line-clamp-3">{state.strategy?.summary ?? t("review.noStrategy")}</p>
-              </ReviewItem>
-              <ReviewItem label={t("review.creatives")}>
-                <p>{t("review.creativeCount", { count: state.creativeIds.length })}</p>
-              </ReviewItem>
-            </dl>
+            <div className="space-y-4">
+              <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                <ReviewItem label={t("review.goal")}>
+                  <p className="font-medium text-base text-foreground">{state.name}</p>
+                  <p className="text-muted-foreground mt-0.5">
+                    {to(state.objective)} · {formatCurrency(state.dailyBudget, state.currency, locale)}/day
+                  </p>
+                  {state.startDate && state.endDate && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      📅 {state.startDate} → {state.endDate}
+                    </p>
+                  )}
+                </ReviewItem>
+                <ReviewItem label={t("review.audience")}>
+                  <p className="font-medium">{state.audienceName}</p>
+                  <p className="text-muted-foreground mt-0.5">
+                    {state.ageMin}–{state.ageMax} · {state.gender === "all" ? "الكل" : state.gender === "male" ? "رجال" : "نساء"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    📍 {state.locations}
+                  </p>
+                  {state.interests && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      🎯 {state.interests}
+                    </p>
+                  )}
+                </ReviewItem>
+                <ReviewItem label={t("review.strategy")}>
+                  <p className="line-clamp-4 text-xs leading-relaxed">{state.strategy?.summary ?? t("review.noStrategy")}</p>
+                </ReviewItem>
+                <ReviewItem label={t("review.creatives")}>
+                  <p className="font-medium">{t("review.creativeCount", { count: state.creativeIds.length })}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {state.creativeIds.length > 0 ? "جاهزة للإطلاق" : "سيتم توليد المحتوى الإعلاني تلقائياً وفق الاستراتيجية"}
+                  </p>
+                </ReviewItem>
+              </dl>
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => {
+                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
+                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(false) } });
+                  }}
+                >
+                  {t("launch.saveDraft")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => {
+                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
+                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(true) } });
+                  }}
+                >
+                  {isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {t("launch.launchNow")}
+                </Button>
+              </div>
+            </div>
           )}
 
           {step === "launch" && (
@@ -325,10 +565,23 @@ export function CampaignWizard() {
               <p className="text-sm text-muted-foreground">{t("launch.desc")}</p>
               {!metaConnected && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("launch.requiresMeta")}</p>}
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" disabled={isPending} onClick={() => dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(false) } })}>
+                <Button
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => {
+                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
+                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(false) } });
+                  }}
+                >
                   {t("launch.saveDraft")}
                 </Button>
-                <Button disabled={isPending || !metaConnected} onClick={() => dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(true) } })}>
+                <Button
+                  disabled={isPending || !metaConnected}
+                  onClick={() => {
+                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
+                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(true) } });
+                  }}
+                >
                   {isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                   {t("launch.launchNow")}
                 </Button>

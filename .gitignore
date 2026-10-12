@@ -40,3 +40,4 @@ sahm.db-shm
 *.db-journal
 var/
 uploads/
+*.tsbuildinfo

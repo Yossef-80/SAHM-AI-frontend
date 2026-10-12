@@ -16,6 +16,7 @@ import {
   mapConnector,
   mapConnectorDeleteResult,
   mapConnectorSettings,
+  mapContentItem,
   mapConversationDetail,
   mapConversationSummary,
   mapCreative,
@@ -74,8 +75,10 @@ import type {
   ConnectorSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
+  GenerateContentCalendarInput,
   GenerateCreativeInput,
   ListCampaignsInput,
+  ListContentInput,
   ListInsightsInput,
   ListMemoryItemsInput,
   LoginInput,
@@ -89,6 +92,7 @@ import type {
   Settings,
   StartTaskInput,
   UpdateAgentInput,
+  UpdateContentItemInput,
   UpdateMemoryItemInput,
   Usage,
   UsagePeriod,
@@ -597,7 +601,15 @@ export class HttpApi implements MarketingApi {
     return {
       conversationId: input.conversationId ?? undefined,
       message: input.text,
-      context: chip ? { campaignId: chip.kind === "campaign" ? chip.id : undefined } : undefined,
+      context: chip
+        ? {
+            campaignId: chip.kind === "campaign" ? chip.id : undefined,
+            creativeId: chip.kind === "creative" ? chip.id : undefined,
+            insightId: chip.kind === "insight" ? chip.id : undefined,
+            competitorId: chip.kind === "competitor" ? chip.id : undefined,
+            competitorName: chip.kind === "competitor" ? chip.label : undefined,
+          }
+        : undefined,
     };
   }
 
@@ -737,22 +749,28 @@ export class HttpApi implements MarketingApi {
     return this.getMetaConnection();
   }
 
-  /* ---------------------------------------------- content calendar (not built) */
+  /* ---------------------------------------------------- content calendar */
 
-  async listContentItems() {
-    return this.parse(z.array(ContentItemSchema), [], "/content");
+  async listContentItems(input?: ListContentInput) {
+    const list = asArray(await this.get("/content", input as Record<string, unknown> | undefined)).map((item) =>
+      mapContentItem(item),
+    );
+    return this.parse(z.array(ContentItemSchema), list, "/content");
   }
 
-  async generateContentCalendar(): Promise<never> {
-    throw unsupported("Content calendar", "Ask the assistant to build a content calendar instead.");
+  async generateContentCalendar(input: GenerateContentCalendarInput) {
+    const list = asArray(await this.post("/content/generate", input)).map((item) => mapContentItem(item));
+    return this.parse(z.array(ContentItemSchema), list, "/content/generate");
   }
 
-  async updateContentItem(): Promise<never> {
-    throw unsupported("Content calendar", "The backend has no /content endpoints.");
+  async updateContentItem(input: UpdateContentItemInput) {
+    const raw = await this.patch(`/content/${input.id}`, input.patch);
+    return this.parse(ContentItemSchema, mapContentItem(raw), `/content/${input.id}`);
   }
 
-  async deleteContentItem(): Promise<never> {
-    throw unsupported("Content calendar", "The backend has no /content endpoints.");
+  async deleteContentItem(id: string) {
+    await this.delete(`/content/${id}`);
+    return { id };
   }
 
   async generateText(): Promise<never> {

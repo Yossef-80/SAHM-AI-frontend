@@ -37,7 +37,7 @@ export function Providers({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
+            staleTime: 60_000,
             retry: (failureCount, error) =>
               error instanceof ApiError && (error.status === 0 || error.status === 429)
                 ? false

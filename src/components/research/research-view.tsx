@@ -378,14 +378,14 @@ export function ResearchView() {
       const data: ResearchItem = await res.json();
       setActiveResearch(data);
       if (data.saved_to_memory !== false) {
-        toast.success(`Intelligence report for "${queryValue || toolKey}" generated & saved!`);
+        toast.success(`تم استخراج وحفظ تقرير الاستخبارات لـ "${queryValue || toolKey}"`);
         await fetchRecent();
       } else {
-        toast.warning(`Verification notice: Entity not verified in market.`);
+        toast.warning(`تنبيه التحقق: لم يتم التحقق من الكيان في السوق.`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Research execution failed: ${msg}`);
+      toast.error(`فشل تشغيل أداة البحث: ${msg}`);
     } finally {
       setLoading(false);
       setPendingTool(null);
@@ -417,10 +417,10 @@ export function ResearchView() {
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  <CardTitle className="text-sm">Verifying & Analyzing Evidence...</CardTitle>
+                  <CardTitle className="text-sm">جاري الفحص واستخراج الأدلة...</CardTitle>
                 </div>
                 <CardDescription className="text-xs">
-                  Ground-truth verifying &ldquo;{currentQuery || pendingTool}&rdquo;, extracting web sources, and synthesizing intelligence.
+                  التحقق من صحة الكيان &ldquo;{currentQuery || pendingTool}&rdquo;، جمع مصادر الويب الحية، وصياغة التقرير الاستخباراتي.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -584,10 +584,10 @@ function ToolCard({
     <Card className="flex flex-col">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0">
             <tool.icon className="h-4 w-4" />
           </span>
-          <CardTitle className="text-sm">{tool.title}</CardTitle>
+          <CardTitle className="text-sm truncate">{tool.title}</CardTitle>
         </div>
         <p className="text-xs text-muted-foreground">{tool.desc}</p>
       </CardHeader>
@@ -616,7 +616,7 @@ function ToolCard({
             ) : (
               <ArrowRight className="h-4 w-4 rtl:rotate-180" />
             )}
-            <span className="ms-1.5">Run</span>
+            <span className="ms-1.5">تشغيل</span>
           </Button>
         </form>
       </CardContent>

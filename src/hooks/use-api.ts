@@ -31,9 +31,9 @@ export const useBrandProfile = () => useQuery({ queryKey: qk.brand, queryFn: () 
 
 /* Campaigns */
 export const useCampaigns = (input?: ListCampaignsInput) =>
-  useQuery({ queryKey: qk.campaigns(input), queryFn: () => api.listCampaigns(input) });
+  useQuery({ queryKey: qk.campaigns(input), queryFn: () => api.listCampaigns(input), staleTime: 60_000 });
 export const useCampaign = (id: string) =>
-  useQuery({ queryKey: qk.campaign(id), queryFn: () => api.getCampaign(id), enabled: !!id });
+  useQuery({ queryKey: qk.campaign(id), queryFn: () => api.getCampaign(id), enabled: !!id, staleTime: 60_000 });
 export const useCampaignPerformance = (id: string) =>
   useQuery({ queryKey: qk.campaignPerformance(id), queryFn: () => api.getCampaignPerformance(id), enabled: !!id });
 export const useCampaignRecommendations = (id: string) =>
@@ -55,7 +55,7 @@ export const useGenerateStrategy = () =>
 
 /* Creatives */
 export const useCreatives = (campaignId?: string) =>
-  useQuery({ queryKey: qk.creatives(campaignId), queryFn: () => api.listCreatives(campaignId) });
+  useQuery({ queryKey: qk.creatives(campaignId), queryFn: () => api.listCreatives(campaignId), staleTime: 60_000 });
 export const useGenerateCreative = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -78,9 +78,10 @@ export const useDismissRecommendation = () => {
 };
 
 /* Assistant */
-export const useConversations = () => useQuery({ queryKey: qk.conversations, queryFn: () => api.listConversations() });
+export const useConversations = () =>
+  useQuery({ queryKey: qk.conversations, queryFn: () => api.listConversations(), staleTime: 60_000 });
 export const useConversation = (id: string | null) =>
-  useQuery({ queryKey: qk.conversation(id ?? ""), queryFn: () => api.getConversation(id!), enabled: !!id });
+  useQuery({ queryKey: qk.conversation(id ?? ""), queryFn: () => api.getConversation(id!), enabled: !!id, staleTime: 60_000 });
 
 /* Tasks — polls while running */
 export const useTask = (id: string, enabled = true) =>
@@ -233,6 +234,7 @@ export const useMemoryItems = (input?: ListMemoryItemsInput) =>
   useQuery({
     queryKey: qk.memory(input as Record<string, unknown> | undefined),
     queryFn: () => api.listMemoryItems(input),
+    staleTime: 60_000,
   });
 
 export const useCreateMemoryItem = () => {

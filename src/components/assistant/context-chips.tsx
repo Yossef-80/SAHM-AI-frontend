@@ -1,15 +1,16 @@
 "use client";
 
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { Megaphone, Plus, X, Image as ImageIcon, Lightbulb } from "lucide-react";
+import { Megaphone, Plus, X, Image as ImageIcon, Lightbulb, Crosshair } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAssistantStore } from "@/store/assistant-store";
-import { useCampaigns, useCreatives } from "@/hooks/use-api";
+import { useCampaigns, useCreatives, useMemoryItems } from "@/hooks/use-api";
 import type { ContextChip } from "@/types";
 
-const icon = { campaign: Megaphone, creative: ImageIcon, insight: Lightbulb };
+const icon = { campaign: Megaphone, creative: ImageIcon, insight: Lightbulb, competitor: Crosshair };
 
 export function ContextChips() {
   const t = useTranslations("assistant");
@@ -19,6 +20,24 @@ export function ContextChips() {
   const remove = useAssistantStore((s) => s.removeContext);
   const campaigns = useCampaigns();
   const creatives = useCreatives();
+  const memoryItems = useMemoryItems({ kind: "competitor_note" });
+
+  const competitors = useMemo(() => {
+    const items = memoryItems.data?.items ?? [];
+    const seen = new Set<string>();
+    const list: { id: string; name: string }[] = [];
+    for (const item of items) {
+      const meta = (item.metadata || {}) as Record<string, unknown>;
+      const details = (meta.details || {}) as Record<string, unknown>;
+      const name = (details.subject as string) || (meta.query as string) || (item.text.length < 35 ? item.text : "");
+      const cleanName = typeof name === "string" ? name.trim() : "";
+      if (cleanName && !seen.has(cleanName.toLowerCase())) {
+        seen.add(cleanName.toLowerCase());
+        list.push({ id: item.id, name: cleanName });
+      }
+    }
+    return list;
+  }, [memoryItems.data]);
 
   const has = (c: ContextChip) => context.some((x) => x.kind === c.kind && x.id === c.id);
 
@@ -57,6 +76,17 @@ export function ContextChips() {
               {c.title}
             </DropdownMenuItem>
           ))}
+          {competitors.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("competitors")}</DropdownMenuLabel>
+              {competitors.slice(0, 8).map((c) => (
+                <DropdownMenuItem key={c.id} disabled={has({ kind: "competitor", id: c.id, label: c.name })} onClick={() => add({ kind: "competitor", id: c.id, label: c.name })}>
+                  {c.name}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
