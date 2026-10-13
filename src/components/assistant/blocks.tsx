@@ -174,8 +174,24 @@ function isTableDivider(line: string): boolean {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
 }
 
+function cleanSerializedText(text: string): string {
+  if (!text) return "";
+  const trimmed = text.trim();
+  if (
+    (trimmed.startsWith("[{") && trimmed.endsWith("}]")) ||
+    (trimmed.startsWith("{'") && trimmed.endsWith("'}") && trimmed.includes("'text':"))
+  ) {
+    const matches = Array.from(trimmed.matchAll(/['"]text['"]\s*:\s*['"]((?:\\.|[^'"])*)['"]/g));
+    if (matches.length > 0) {
+      return matches.map((m) => m[1].replace(/\\n/g, "\n").replace(/\\'/g, "'").replace(/\\"/g, '"')).join("\n");
+    }
+  }
+  return text;
+}
+
 export function renderMarkdown(text: string): ReactNode[] {
-  const normalized = text
+  const cleaned = cleanSerializedText(text);
+  const normalized = cleaned
     .replace(/\\?<br\s*\/?\s*>/gi, "\n")
     .replace(/\\\|/g, "|")
     .replace(/\r\n?/g, "\n");
