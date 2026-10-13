@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { Pause, Play, Wallet } from "lucide-react";
+import { Pause, Play, Rocket, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +15,7 @@ import { ActionButton } from "@/components/shared/action-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useAction } from "@/hooks/use-action";
 import { useCampaign } from "@/hooks/use-api";
+import { useUiStore } from "@/store/ui-store";
 import { formatCurrency } from "@/lib/format";
 import type { Campaign } from "@/types";
 import { OverviewTab, StrategyTab, AudienceTab, CreativesTab, PerformanceTab, RecommendationsTab, LearningsTab } from "./tabs";
@@ -94,19 +95,48 @@ export function CampaignDetail({ id }: { id: string }) {
   );
 }
 
-/** Pause / resume / edit budget — all live changes, all via UPDATE_CAMPAIGN (confirm dialog enforced by registry). */
+/**
+ * State-aware header.
+ *
+ * A draft has no Meta campaign behind it, so pausing or resuming it would be
+ * meaningless — its next step is to be planned and published in the wizard, and
+ * the wizard takes the campaign's details through `campaignPrefill`. Only once a
+ * campaign exists on Meta do pause / resume / edit budget apply.
+ */
 function HeaderActions({ campaign: c }: { campaign: Campaign }) {
   const t = useTranslations("campaigns");
   const tc = useTranslations("common");
+  const router = useRouter();
+  const setPrefill = useUiStore((s) => s.setCampaignPrefill);
   const { dispatch, isPending } = useAction();
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [budget, setBudget] = useState(String(c.dailyBudget));
   const live = c.status === "active" || c.status === "paused";
 
+  /** Hand the draft's shape to the wizard, which reads it on mount. */
+  const continueOnMeta = () => {
+    setPrefill({
+      name: c.name,
+      objective: c.objective,
+      dailyBudget: c.dailyBudget,
+      currency: c.currency,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      creativeIds: c.creativeIds,
+    });
+    router.push("/campaigns/new");
+  };
+
   return (
     <div className="flex flex-wrap gap-2">
       <ActionButton variant="outline" size="sm" action={{ type: "ANALYZE_CAMPAIGN", payload: { campaignId: c.id } }} />
       <ActionButton variant="outline" size="sm" action={{ type: "OPTIMIZE_CAMPAIGN", payload: { campaignId: c.id } }} />
+      {!live && (
+        <Button size="sm" onClick={continueOnMeta} title={t("continueOnMetaHint")}>
+          <Rocket className="me-2 h-4 w-4" />
+          {t("continueOnMeta")}
+        </Button>
+      )}
       {live && (
         <>
           <Button variant="outline" size="sm" disabled={isPending} onClick={() => setBudgetOpen(true)}>

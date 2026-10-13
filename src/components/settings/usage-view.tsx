@@ -85,6 +85,7 @@ function UsagePanel({ period }: { period: UsagePeriod }) {
   return (
     <AsyncBoundary
       isLoading={query.isLoading}
+      isPending={query.isPending}
       isError={query.isError}
       error={query.error}
       data={query.data}

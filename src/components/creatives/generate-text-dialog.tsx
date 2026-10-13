@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActionButton } from "@/components/shared/action-button";
 import { useAction } from "@/hooks/use-action";
+import { useBusinessProfileForm } from "@/hooks/use-api";
 import { useUiStore } from "@/store/ui-store";
 import { TextToolSchema, type Locale, type TextTool } from "@/types";
 
@@ -17,34 +18,49 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   initialTool?: TextTool;
+  initialBrief?: string;
   campaignId?: string | null;
+  creativeId?: string | null;
 }
 
 /**
  * "Write with AI": pick a text tool + brief → GENERATE_TEXT action → result lands in ui-store.generatedText.
  * The result can be copied or handed to CREATE_CREATIVE as a brief (still through the registry).
  */
-export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate_ad_copy", campaignId = null }: Props) {
+export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate_ad_copy", initialBrief = "", campaignId = null, creativeId = null }: Props) {
   const t = useTranslations("creatives.textTools");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
+  const isDemoMode = (process.env.NEXT_PUBLIC_USE_MOCKS ?? "true") !== "false";
   const { dispatch, isPending } = useAction();
+  const profile = useBusinessProfileForm();
+  const savedVisualStyle = profile.data?.visualStyle?.trim() ?? "";
   const result = useUiStore((s) => s.generatedText);
   const setResult = useUiStore((s) => s.setGeneratedText);
   const [tool, setTool] = useState<TextTool>(initialTool);
-  const [brief, setBrief] = useState("");
+  const [brief, setBrief] = useState(initialBrief);
   const [copied, setCopied] = useState(false);
+  const [useSavedStyle, setUseSavedStyle] = useState(false);
 
   useEffect(() => {
     if (open) {
       setTool(initialTool);
+      setBrief(initialBrief);
+      setUseSavedStyle(false);
       setResult(null);
       setCopied(false);
     }
-  }, [open, initialTool, setResult]);
+  }, [open, initialTool, initialBrief, setResult]);
 
   const valid = brief.trim().length >= 3;
-  const generate = () => dispatch({ type: "GENERATE_TEXT", payload: { tool, brief: brief.trim(), campaignId, language: locale } });
+  const toolUsesVisualStyle = tool !== "generate_ad_copy";
+  const generate = () => {
+    const styleNote = useSavedStyle && toolUsesVisualStyle && savedVisualStyle
+      ? t("preferredStylePrompt", { style: savedVisualStyle })
+      : "";
+    const requestBrief = [brief.trim(), styleNote].filter(Boolean).join("\n\n");
+    return dispatch({ type: "GENERATE_TEXT", payload: { tool, brief: requestBrief, campaignId, creativeId, language: locale } });
+  };
 
   const copy = async () => {
     if (!result) return;
@@ -64,6 +80,12 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
           <DialogTitle>{t("title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">{t("outputModeNote")}</p>
+          {isDemoMode && (
+            <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+              {t("demoModeNote")}
+            </p>
+          )}
           <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
             <div className="space-y-1.5">
               <Label>{t("tool")}</Label>
@@ -79,6 +101,29 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
               <Textarea id="gt-brief" rows={2} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder={t("briefPlaceholder")} dir="auto" />
             </div>
           </div>
+
+          {toolUsesVisualStyle && (
+            <div className="space-y-2 rounded-md border border-dashed p-3">
+              <Button
+                type="button"
+                size="sm"
+                variant={useSavedStyle ? "secondary" : "outline"}
+                disabled={!savedVisualStyle || isPending}
+                aria-pressed={useSavedStyle}
+                onClick={() => setUseSavedStyle((value) => !value)}
+              >
+                <Sparkles className="me-2 h-4 w-4" />
+                {useSavedStyle ? t("styleIncluded") : t("includeSavedStyle")}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {savedVisualStyle
+                  ? useSavedStyle
+                    ? t("savedStylePreview", { style: savedVisualStyle })
+                    : t("savedStyleAvailable")
+                  : t("styleNotSet")}
+              </p>
+            </div>
+          )}
 
           {result && (
             <div className="space-y-3 rounded-lg border bg-muted/30 p-4" dir="auto">
@@ -100,11 +145,11 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{tc("close")}</Button>
-          {result && (
+          {result && (tool === "generate_creative_brief" || tool === "generate_image_prompt") && (
             <ActionButton
               variant="secondary"
               onDone={(ok) => ok && onOpenChange(false)}
-              action={{ type: "CREATE_CREATIVE", payload: { kind: tool === "generate_video_prompt" || tool === "generate_commercial_script" ? "video" : tool === "generate_ad_copy" ? "copy" : "image", brief: result.plainText.slice(0, 1500), campaignId } }}
+              action={{ type: "CREATE_CREATIVE", payload: { kind: "image", brief: result.plainText.slice(0, 1500), campaignId } }}
             >
               {t("useAsBrief")}
             </ActionButton>

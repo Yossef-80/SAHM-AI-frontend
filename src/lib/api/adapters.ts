@@ -46,6 +46,7 @@ import type {
   ContentStatus,
   Conversation,
   Creative,
+  CreativeReference,
   Insight,
   MemoryItem,
   MemoryItemList,
@@ -294,7 +295,7 @@ export function toCampaignCreateBody(draft: Json): Json {
     startDate: iso(draft.startDate),
     endDate: draft.endDate ? iso(draft.endDate) : null,
     targetAudience: audienceLabel || null,
-    notes: str(draft.launchNow) ? "Launch requested from the campaign wizard." : null,
+    notes: null,
   };
 }
 
@@ -311,9 +312,12 @@ export function mapCreative(raw: Json): Creative {
     kind: "image",
     title: str(raw.prompt, "Creative").slice(0, 80),
     status: str(raw.status, "ready") === "ready" ? "ready" : "draft",
+    prompt: str(raw.prompt) || undefined,
     assetUrl: url || undefined,
     thumbnailUrl: url || undefined,
-    aspectRatio: mapAspectRatio(raw.aspectRatio),
+    // Tool outputs are plain BaseModels with no alias generator, so this field
+    // arrives snake_case from the backend; camelCase is kept for the mocks.
+    aspectRatio: mapAspectRatio(raw.aspectRatio ?? raw.aspect_ratio),
     tags: [],
     createdAt: created,
     updatedAt: iso(raw.updatedAt ?? created),
@@ -331,21 +335,56 @@ export function mapReferenceAnalysis(raw: Json): ReferenceAnalysis {
   const style = isRecord(raw.style) ? raw.style : {};
   const observedOffers = asArray(raw.observedOffers).map((o) => str(o)).filter(Boolean);
   const observedCta = asArray(raw.observedCta).map((o) => str(o)).filter(Boolean);
+  const elements = asArray(style.elements).filter(isRecord).map((element) => ({
+    element: str(element.element),
+    relativePosition: str(element.relativePosition ?? element.relative_position),
+    relativeSize: str(element.relativeSize ?? element.relative_size),
+    visualAttributes: str(element.visualAttributes ?? element.visual_attributes),
+    exactText: str(element.exactText ?? element.exact_text),
+    layerOrder: typeof element.layerOrder === "number"
+      ? element.layerOrder
+      : typeof element.layer_order === "number"
+        ? element.layer_order
+        : null,
+  }));
   return {
     id: str(raw.id, "ref_unknown"),
     sourceUrl: (nullableStr(raw.source) ?? undefined),
-    sourceName: str(raw.model, "Reference creative"),
+    sourceName: str(raw.sourceName ?? raw.source_name ?? raw.model, "Reference creative"),
     kind: "image",
-    hook: str(style.hookType),
-    structure: [str(style.composition), str(style.layoutPattern)].filter(Boolean),
-    visualStyle: [str(style.typography), str(style.tone), str(style.colorMood), ...asArray(style.palette).map((p) => str(p))].filter(Boolean),
+    status: (["ok", "partial", "unavailable"].includes(str(raw.status, "ok"))
+      ? str(raw.status, "ok")
+      : "ok") as ReferenceAnalysis["status"],
+    unavailableReason: nullableStr(raw.unavailableReason ?? raw.unavailable_reason) ?? undefined,
+    hook: str(style.hookType ?? style.hook_type),
+    structure: [str(style.composition), str(style.layoutPattern ?? style.layout_pattern)].filter(Boolean),
+    visualStyle: [str(style.typography), str(style.tone), str(style.colorMood ?? style.color_mood), ...asArray(style.palette).map((p) => str(p))].filter(Boolean),
     tone: [str(style.tone)].filter(Boolean),
     cta: observedCta[0],
-    strengths: observedOffers,
+    strengths: [],
     weaknesses: [],
-    estimatedPerformance: "medium",
+    estimatedPerformance: "unknown",
     inspiredBrief: str(raw.summary, style.notes && str(style.notes)),
-    createdAt: iso(raw.createdAt),
+    style: {
+      canvasRatio: str(style.canvasRatio ?? style.canvas_ratio),
+      background: str(style.background),
+      lighting: str(style.lighting),
+      visibleText: asArray(style.visibleText ?? style.visible_text).map((item) => str(item)).filter(Boolean),
+      elements,
+      palette: asArray(style.palette).map((item) => str(item)).filter(Boolean),
+      composition: str(style.composition),
+      typography: str(style.typography),
+      tone: str(style.tone),
+      layoutPattern: str(style.layoutPattern ?? style.layout_pattern),
+      hookType: str(style.hookType ?? style.hook_type),
+      colorMood: str(style.colorMood ?? style.color_mood),
+      textDensity: str(style.textDensity ?? style.text_density),
+      brandElements: asArray(style.brandElements ?? style.brand_elements).map((item) => str(item)).filter(Boolean),
+      notes: str(style.notes),
+    },
+    observedOffers,
+    observedCta,
+    createdAt: iso(raw.createdAt ?? raw.created_at),
   };
 }
 
@@ -370,6 +409,18 @@ export function mapInsight(raw: Json): Insight {
     action: null,
     metric: firstKey ? { label: firstKey.replace(/_/g, " "), value: num(firstValue), unit: undefined, delta: undefined } : undefined,
     createdAt: iso(raw.createdAt),
+  };
+}
+
+export function mapCreativeReference(raw: Json): CreativeReference {
+  const mapped = mapReferenceAnalysis(raw);
+  return {
+    id: str(raw.id),
+    sourceName: str(raw.sourceName ?? raw.source_name, mapped.sourceName),
+    summary: str(raw.summary, mapped.inspiredBrief),
+    style: mapped.style,
+    favorite: bool(raw.favorite),
+    createdAt: nullableStr(raw.createdAt ?? raw.created_at),
   };
 }
 
@@ -426,27 +477,27 @@ export const ACTION_TASK_MAP: Record<string, { task: string; personaId: string }
   GENERATE_MARKETING_STRATEGY: { task: "marketing_strategy", personaId: "omar" },
   CREATE_CAMPAIGN: { task: "campaign_strategy", personaId: "omar" },
   GENERATE_CONTENT_CALENDAR: { task: "content_calendar", personaId: "omar" },
-  CREATE_CREATIVE: { task: "creative_brief", personaId: "layla" },
-  GENERATE_TEXT: { task: "ad_copy", personaId: "layla" },
-  GENERATE_VARIATIONS: { task: "ad_variations", personaId: "layla" },
-  ANALYZE_CREATIVE: { task: "ad_variations", personaId: "layla" },
   ANALYZE_CAMPAIGN: { task: "performance_analysis", personaId: "karim" },
   OPTIMIZE_CAMPAIGN: { task: "optimization_proposal", personaId: "salma" },
   ADD_TO_CAMPAIGN: { task: "optimization_proposal", personaId: "salma" },
   UPDATE_CAMPAIGN: { task: "optimization_proposal", personaId: "salma" },
   APPLY_RECOMMENDATION: { task: "optimization_proposal", personaId: "salma" },
   CONNECT_META: { task: "optimization_proposal", personaId: "salma" },
-  UPDATE_AGENT: { task: "ad_copy", personaId: "layla" },
 };
 
 /** Reverse lookup: backend `task_name` → the `ActionType` the UI dispatched. */
-const TASK_TYPE_MAP: Record<string, string> = Object.entries(ACTION_TASK_MAP).reduce<Record<string, string>>(
-  (acc, [action, { task }]) => {
-    if (!acc[task]) acc[task] = action;
-    return acc;
-  },
-  {},
-);
+const TASK_TYPE_MAP: Record<string, string> = {
+  ...Object.entries(ACTION_TASK_MAP).reduce<Record<string, string>>(
+    (acc, [action, { task }]) => {
+      if (!acc[task]) acc[task] = action;
+      return acc;
+    },
+    {},
+  ),
+  // Historical assistant cards map to the new Write with AI dialog action;
+  // this does not make Layla's old `/tasks` endpoint executable again.
+  ad_variations: "GENERATE_VARIATIONS",
+};
 
 function mapStepStatus(v: unknown): AgentTask["status"] {
   const s = str(v, "pending");
@@ -460,8 +511,13 @@ export function mapAgentTask(raw: Json, fallbackType = "ANALYZE_CAMPAIGN"): Agen
   const rawProgress = num(raw.progress);
   const progress = clamp(rawProgress <= 1 ? rawProgress * 100 : rawProgress, 0, 100);
   const result = isRecord(raw.result) ? raw.result : {};
-  const recommendationId = str(result.recommendationId);
-  const campaignId = str(result.campaignId);
+  const output = isRecord(result.output) ? result.output : result;
+  const recommendationId = str(
+    result.recommendationId ?? result.recommendation_id ?? output.recommendationId ?? output.recommendation_id,
+  );
+  const campaignId = str(
+    result.campaignId ?? result.campaign_id ?? output.campaignId ?? output.campaign_id,
+  );
   const conversationId = str(raw.conversationId);
   return {
     id: str(raw.id),
@@ -477,6 +533,7 @@ export function mapAgentTask(raw: Json, fallbackType = "ANALYZE_CAMPAIGN"): Agen
         : conversationId
           ? { entity: "conversation", id: conversationId }
           : null,
+    result: isRecord(raw.result) ? raw.result : null,
     error: nullableStr(raw.error),
     createdAt: iso(raw.createdAt),
     updatedAt: iso(raw.updatedAt),
@@ -576,6 +633,21 @@ export function mapBlock(raw: unknown): AnyBlock | null {
       const isBrandAction = (s: string) =>
         /brand|identity|تسمية|هوية|براند/i.test(s);
 
+      const normalizePayload = (p: Record<string, unknown>) => {
+        const out = { ...p };
+        for (const [wireKey, uiKey] of [
+          ["campaign_id", "campaignId"],
+          ["creative_id", "creativeId"],
+          ["conversation_id", "conversationId"],
+        ] as const) {
+          if (out[uiKey] === undefined && out[wireKey] !== undefined) {
+            out[uiKey] = out[wireKey];
+          }
+          delete out[wireKey];
+        }
+        return out;
+      };
+
       const rawActions = asArray(raw.actions);
       let actions: ActionCardBlock["actions"] = [];
 
@@ -601,7 +673,7 @@ export function mapBlock(raw: unknown): AnyBlock | null {
           return {
             type: resolvedType,
             label: actLabel,
-            payload: { ...payload, ...actPayload, task: taskName || actType },
+            payload: normalizePayload({ ...payload, ...actPayload, task: taskName || actType }),
           };
         });
       } else {
@@ -617,7 +689,7 @@ export function mapBlock(raw: unknown): AnyBlock | null {
           {
             type: resolvedType,
             label: str(raw.label, isUsage ? "عرض الاستهلاك" : isBrand ? "Manage Brand Profile" : "Run"),
-            payload: { ...payload, ...inputs, task: taskName },
+            payload: normalizePayload({ ...payload, ...inputs, task: taskName }),
           },
         ];
       }
@@ -758,6 +830,24 @@ export function mapConversationDetail(raw: Json): { conversation: Conversation; 
       messageCount: messages.length,
       createdAt: iso(raw.createdAt),
       updatedAt: iso(raw.updatedAt),
+      context: (() => {
+        const ctx = isRecord(raw.context) ? raw.context : {};
+        return {
+          campaignId: nullableStr(ctx.campaignId ?? ctx.campaign_id) ?? undefined,
+          creativeId: nullableStr(ctx.creativeId ?? ctx.creative_id) ?? undefined,
+          insightId: nullableStr(ctx.insightId ?? ctx.insight_id) ?? undefined,
+          referenceAnalysisId: nullableStr(ctx.referenceAnalysisId ?? ctx.reference_analysis_id) ?? undefined,
+          workflow: str(ctx.workflow) === "creative_prompt" ? "creative_prompt" as const : undefined,
+          promptType: ["image", "video"].includes(str(ctx.promptType ?? ctx.prompt_type))
+            ? str(ctx.promptType ?? ctx.prompt_type) as "image" | "video"
+            : undefined,
+          creativeMode: ["chat", "prompt", "design"].includes(str(ctx.creativeMode ?? ctx.creative_mode))
+            ? str(ctx.creativeMode ?? ctx.creative_mode) as "chat" | "prompt" | "design"
+            : undefined,
+          personaId: nullableStr(ctx.personaId ?? ctx.persona_id) ?? undefined,
+          businessId: nullableStr(ctx.businessId ?? ctx.business_id) ?? undefined,
+        };
+      })(),
     },
     messages,
   };
@@ -769,16 +859,23 @@ export function mapConversationDetail(raw: Json): { conversation: Conversation; 
 
 export function mapMetaStatus(raw: Json): MetaConnection {
   const connected = bool(raw.connected);
+  const campaignReady = bool(raw.campaignReady);
   const reason = (nullableStr(raw.unavailableReason) ?? undefined);
   return {
     status: connected ? "connected" : reason ? "error" : "not_connected",
+    campaignReady,
+    pageConfigured: bool(raw.pageConfigured),
     accountId: nullableStr(raw.adAccountId),
     accountName: nullableStr(raw.adAccountName),
     pageName: null,
     permissions: asArray(raw.scopes).map((s) => str(s)).filter(Boolean),
     connectedAt: raw.lastSyncedAt ? iso(raw.lastSyncedAt) : null,
     expiresAt: raw.tokenExpiresAt ? iso(raw.tokenExpiresAt) : null,
-    errorMessage: connected ? null : (reason ?? str(raw.message) ?? null),
+    // Keyed to campaignReady, not connected. An account can be fully connected
+    // and still be unable to publish because the Page ID is missing; gating on
+    // `connected` threw away the backend's precise diagnosis in exactly that
+    // case, leaving the wizard to show a generic "configure everything".
+    errorMessage: campaignReady ? null : (reason ?? nullableStr(raw.message) ?? null),
   };
 }
 

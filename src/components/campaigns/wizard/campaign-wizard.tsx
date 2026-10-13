@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Check, ChevronLeft, ChevronRight, Loader2, Sparkles } from "lucide-react";
+import { Plus, X, Check, ChevronLeft, ChevronRight, Loader2, Sparkles, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,22 +13,45 @@ import { Badge } from "@/components/ui/badge";
 import { AsyncBoundary, CardGridSkeleton } from "@/components/shared/async-boundary";
 import { PageHeader } from "@/components/shared/page-header";
 import { useAction } from "@/hooks/use-action";
-import { useCreatives, useGenerateStrategy, useMetaConnection } from "@/hooks/use-api";
+import {
+  useCreatives,
+  useUploadCreative,
+  useGenerateStrategy,
+  useMetaConnection,
+  useAssistMetaAdPlan,
+  usePrepareMetaAdPlan,
+  useMetaInterestSearch,
+  usePreviewMetaAdPlan,
+  useConfirmMetaAdPlan,
+  useActivateMetaAdPlan,
+} from "@/hooks/use-api";
 import { useUiStore } from "@/store/ui-store";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CampaignObjectiveSchema, type CampaignDraft, type CampaignObjective, type CampaignStrategy } from "@/types";
-import { StrategyView } from "../detail/strategy-view";
+import {
+  CampaignObjectiveSchema,
+  type CampaignDraft,
+  type CampaignObjective,
+  type GeneratedCampaignStrategy,
+  type MetaAdPlanActivationResponse,
+  type MetaAdPlanApprovalResponse,
+  type MetaAdPlanAssistResponse,
+  type MetaAdPlanSettings,
+} from "@/types";
+import { GeneratedStrategyView } from "../detail/generated-strategy-view";
 import { CreativeCard } from "@/components/creatives/creative-card";
 
 const STEPS = ["goal", "audience", "strategy", "creatives", "review", "launch"] as const;
+
+/** Meta expects selected gender IDs as an array; omit the key for all genders. */
+const GENDER_TO_META = { male: 1, female: 2 } as const;
 type Step = (typeof STEPS)[number];
 
 const DRAFT_STORAGE_KEY = "sahm_campaign_wizard_draft";
 
 type WizardState = {
   name: string;
-  objective: CampaignObjective;
+  objective: CampaignObjective | "";
   dailyBudget: number;
   currency: string;
   startDate: string;
@@ -38,13 +61,123 @@ type WizardState = {
   ageMax: number;
   gender: "all" | "male" | "female";
   locations: string;
-  interests: string;
+  /** Interests already resolved to Meta IDs; targeting rejects bare names. */
+  interests: { id: string; name: string }[];
   brief: string;
-  strategy: CampaignStrategy | null;
+  strategy: GeneratedCampaignStrategy | null;
   creativeIds: string[];
+  destinationUrl: string;
+  primaryText: string;
+  headline: string;
+  callToActionType: string;
+  billingEvent: string | null;
+  optimizationGoal: string | null;
+  destinationType: string | null;
+  specialAdCategories: string[];
+  instagramActorId: string;
+  /** ISO country codes for Meta `geo_locations`. Chosen, never inferred. */
+  countries: string[];
 };
 
+type PreparedMetaPlan = { campaignId: string; recommendationId: string; title: string };
+
+/**
+ * Meta fixes the billing event, optimization goal and destination type per
+ * campaign objective, so these are derived rather than typed in by a customer.
+ * A wrong value here makes Meta reject the campaign, which is exactly why the
+ * raw fields were removed from the wizard.
+ */
+const META_OBJECTIVE_DEFAULTS: Record<
+  string,
+  { billingEvent: string; optimizationGoal: string; destinationType?: string }
+> = {
+  awareness: { billingEvent: "IMPRESSIONS", optimizationGoal: "REACH" },
+  traffic: {
+    billingEvent: "LINK_CLICKS",
+    optimizationGoal: "LINK_CLICKS",
+    destinationType: "WEBSITE",
+  },
+  engagement: {
+    billingEvent: "IMPRESSIONS",
+    optimizationGoal: "POST_ENGAGEMENT",
+    destinationType: "WEBSITE",
+  },
+  leads: {
+    billingEvent: "OFFSITE_CONVERSIONS",
+    optimizationGoal: "OFFSITE_CONVERSIONS",
+    destinationType: "WEBSITE",
+  },
+  sales: {
+    billingEvent: "OFFSITE_CONVERSIONS",
+    optimizationGoal: "OFFSITE_CONVERSIONS",
+    destinationType: "WEBSITE",
+  },
+  app_installs: {
+    billingEvent: "APP_INSTALLS",
+    optimizationGoal: "APP_INSTALLS",
+    destinationType: "APP",
+  },
+};
+
+/** Objectives that need a Meta Pixel / app object the customer cannot supply. */
+const PROMOTED_OBJECT_OBJECTIVES = ["leads", "sales", "app_installs"];
+
+/** Markets offered in the targeting picker. ISO 3166-1 alpha-2, as Meta wants. */
+const COUNTRY_OPTIONS: Array<{ code: string; ar: string; en: string }> = [
+  { code: "EG", ar: "مصر", en: "Egypt" },
+  { code: "SA", ar: "السعودية", en: "Saudi Arabia" },
+  { code: "AE", ar: "الإمارات", en: "United Arab Emirates" },
+  { code: "KW", ar: "الكويت", en: "Kuwait" },
+  { code: "QA", ar: "قطر", en: "Qatar" },
+  { code: "BH", ar: "البحرين", en: "Bahrain" },
+  { code: "OM", ar: "عُمان", en: "Oman" },
+  { code: "JO", ar: "الأردن", en: "Jordan" },
+  { code: "IQ", ar: "العراق", en: "Iraq" },
+  { code: "MA", ar: "المغرب", en: "Morocco" },
+  { code: "US", ar: "الولايات المتحدة", en: "United States" },
+  { code: "GB", ar: "بريطانيا", en: "United Kingdom" },
+];
+
 const today = () => new Date().toISOString().slice(0, 10);
+
+function toGeneratedStrategy(s: unknown): GeneratedCampaignStrategy | null {
+  if (!s || typeof s !== "object") return null;
+  const strat = s as Record<string, unknown>;
+  const rawChannels = Array.isArray(strat.channels) ? strat.channels : [];
+  const channels = rawChannels.map((c) => {
+    if (typeof c === "string") {
+      return {
+        channel: c,
+        role: "Primary channel",
+        placements: Array.isArray(strat.placements) ? (strat.placements as string[]) : [],
+        rationale: "Selected for campaign objectives",
+        budgetSharePct: null,
+      };
+    }
+    return c;
+  });
+
+  return {
+    summary: String(strat.summary ?? ""),
+    objective: (strat.objective as string) ?? null,
+    audience: (strat.audience as string) ?? null,
+    positioning: (strat.positioning as string) ?? null,
+    keyMessages: Array.isArray(strat.keyMessages) ? (strat.keyMessages as string[]) : [],
+    channels: channels as GeneratedCampaignStrategy["channels"],
+    placements: Array.isArray(strat.placements) ? (strat.placements as string[]) : [],
+    creativeDirection: (strat.creativeDirection as string) ?? null,
+    ctaDirection: (strat.ctaDirection as string) ?? null,
+    creativesNeeded: Array.isArray(strat.creativesNeeded) ? (strat.creativesNeeded as string[]) : [],
+    successMetrics: Array.isArray(strat.successMetrics)
+      ? (strat.successMetrics as string[])
+      : Array.isArray(strat.kpis)
+      ? (strat.kpis as { metric: string; target: number }[]).map((k) => `${k.metric}: ${k.target}`)
+      : [],
+    evidence: Array.isArray(strat.evidence) ? (strat.evidence as string[]) : [],
+    assumptions: Array.isArray(strat.assumptions) ? (strat.assumptions as string[]) : [],
+    missingInputs: Array.isArray(strat.missingInputs) ? (strat.missingInputs as string[]) : [],
+  };
+}
 
 function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>): WizardState {
   const aud = (p.audience ?? {}) as Record<string, unknown>;
@@ -65,11 +198,14 @@ function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>
       ? (aud.locations as string)
       : "Cairo, EG, Giza, EG, Alexandria, EG";
 
-  const interestsStr = Array.isArray(aud.interests)
-    ? (aud.interests as string[]).join(", ")
-    : typeof aud.interests === "string"
-      ? (aud.interests as string)
-      : "";
+  const rawInterests = aud.interests;
+  const interests: { id: string; name: string }[] = Array.isArray(rawInterests)
+    ? rawInterests.map((it, idx) =>
+        typeof it === "object" && it !== null && "id" in it
+          ? (it as { id: string; name: string })
+          : { id: `int_${idx}`, name: String(it) },
+      )
+    : [];
 
   const rawStart = (p.startDate ?? p.start_date) as string | undefined;
   const startDateStr = rawStart ? String(rawStart).slice(0, 10) : today();
@@ -97,11 +233,45 @@ function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>
     ageMax: Number(aud.ageMax ?? aud.age_max ?? 45),
     gender,
     locations: locationsStr,
-    interests: interestsStr,
+    interests,
     brief: String(p.strategy?.summary ?? p.brief ?? ""),
-    strategy: p.strategy ?? null,
+    strategy: toGeneratedStrategy(p.strategy),
     creativeIds: p.creativeIds ?? [],
+    destinationUrl: String(p.destinationUrl ?? ""),
+    primaryText: String(p.primaryText ?? ""),
+    headline: String(p.headline ?? ""),
+    callToActionType: String(p.callToActionType ?? "LEARN_MORE"),
+    billingEvent: null,
+    optimizationGoal: null,
+    destinationType: null,
+    specialAdCategories: [],
+    instagramActorId: "",
+    countries: ["EG"],
   };
+}
+
+function getMetaPlanRecoveryAction(
+  result: MetaAdPlanApprovalResponse | null,
+): "retry" | "resume" | null {
+  if (!result || result.executed) return null;
+  const execution = result.recommendation.executionResult;
+  if (!execution || execution.retry_safe !== true) return null;
+  const createdIds = execution.created_ids;
+  if (typeof createdIds !== "object" || createdIds === null || Array.isArray(createdIds)) return null;
+  const ids = createdIds as Record<string, unknown>;
+
+  if (execution.status === "failed_safe" && Object.keys(ids).length === 0) return "retry";
+  if (
+    execution.status === "partial" &&
+    execution.failure_status_code === 400 &&
+    (execution.attempted_step === "campaign_bid_strategy" || execution.attempted_step === "ad_set") &&
+    Object.keys(ids).length === 1 &&
+    typeof ids.campaign === "string" &&
+    ids.campaign.length > 0
+  ) {
+    return "resume";
+  }
+  return null;
 }
 
 export function CampaignWizard() {
@@ -113,7 +283,33 @@ export function CampaignWizard() {
   const setPrefill = useUiStore((s) => s.setCampaignPrefill);
   const { dispatch, isPending } = useAction();
   const genStrategy = useGenerateStrategy();
+  const assistMetaPlan = useAssistMetaAdPlan();
+  const prepareMetaPlan = usePrepareMetaAdPlan();
+  const previewMetaPlan = usePreviewMetaAdPlan();
+  const confirmMetaPlan = useConfirmMetaAdPlan();
+  const activateMetaPlan = useActivateMetaAdPlan();
   const creatives = useCreatives();
+  const upload = useUploadCreative();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Selecting a file uploads it immediately, then auto-selects the new creative
+   * so the user does not have to hunt for it in the grid.
+   */
+  const handleUploadPicked = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Clear the input first: without this, picking the same file twice in a row
+    // fires no change event and the second upload silently does nothing.
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const created = await upload.mutateAsync({ file });
+      set("creativeIds", Array.from(new Set([...state.creativeIds, created.id])));
+      creatives.refetch();
+    } catch {
+      // The banner next to the button carries the message.
+    }
+  };
+
   const meta = useMetaConnection();
 
   const [isAiPrefilled, setIsAiPrefilled] = useState(false);
@@ -140,6 +336,10 @@ export function CampaignWizard() {
     return "goal";
   });
 
+  // Type-ahead for Meta Targeting Search
+  const [interestQuery, setInterestQuery] = useState("");
+  const interestSearch = useMetaInterestSearch(interestQuery);
+
   const [state, setState] = useState<WizardState>(() => {
     if (prefill) {
       return parsePrefillToState(prefill);
@@ -165,17 +365,41 @@ export function CampaignWizard() {
       currency: "EGP",
       startDate: today(),
       endDate: "",
-      audienceName: "",
+      audienceName: "الجمهور المستهدف للنمو والمبيعات",
       ageMin: 22,
       ageMax: 45,
       gender: "all",
       locations: "Cairo, EG",
-      interests: "",
+      interests: [],
       brief: "",
       strategy: null,
       creativeIds: [],
+      destinationUrl: "",
+      primaryText: "",
+      headline: "",
+      callToActionType: "LEARN_MORE",
+      billingEvent: null,
+      optimizationGoal: null,
+      destinationType: null,
+      specialAdCategories: [],
+      instagramActorId: "",
+      countries: ["EG"],
     };
   });
+
+  const interestOptions = (interestSearch.data?.results ?? []).filter(
+    (r) => !state.interests.some((s) => s.id === r.id),
+  );
+
+  const [preparedPlan, setPreparedPlan] = useState<PreparedMetaPlan | null>(null);
+  const [planPreview, setPlanPreview] = useState<MetaAdPlanApprovalResponse | null>(null);
+  const [planExecution, setPlanExecution] = useState<MetaAdPlanApprovalResponse | null>(null);
+  const [retryReview, setRetryReview] = useState(false);
+  // Activation is a separate two-phase step: preview first, then spend.
+  const [activation, setActivation] = useState<MetaAdPlanActivationResponse | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [assistResult, setAssistResult] = useState<MetaAdPlanAssistResponse | null>(null);
+  const [assistError, setAssistError] = useState<string | null>(null);
 
   // Handle incoming prefill updates
   useEffect(() => {
@@ -233,35 +457,52 @@ export function CampaignWizard() {
       currency: "EGP",
       startDate: today(),
       endDate: "",
-      audienceName: "",
+      audienceName: "الجمهور المستهدف للنمو والمبيعات",
       ageMin: 22,
       ageMax: 45,
       gender: "all",
       locations: "Cairo, EG",
-      interests: "",
+      interests: [],
       brief: "",
       strategy: null,
       creativeIds: [],
+      destinationUrl: "",
+      primaryText: "",
+      headline: "",
+      callToActionType: "LEARN_MORE",
+      billingEvent: null,
+      optimizationGoal: null,
+      destinationType: null,
+      specialAdCategories: [],
+      instagramActorId: "",
+      countries: ["EG"],
     });
     setStep("goal");
     setHasDraftRestored(false);
     setIsAiPrefilled(false);
   };
 
-  const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => setState((s) => ({ ...s, [k]: v }));
+  const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => {
+    setAssistResult(null);
+    setAssistError(null);
+    setState((s) => ({ ...s, [k]: v }));
+  };
   const idx = STEPS.indexOf(step);
 
   const errors = useMemo(() => {
     const e: Partial<Record<Step, string>> = {};
-    if (state.name.trim().length < 2) e.goal = t("validation.nameRequired");
+    if (!state.objective) e.goal = t("validation.objectiveRequired");
+    else if (state.name.trim().length < 2) e.goal = t("validation.nameRequired");
     else if (!(state.dailyBudget > 0)) e.goal = t("validation.budgetPositive");
+    else if (!/^[A-Z]{3}$/.test(state.currency)) e.goal = t("validation.currencyRequired");
     if (!state.audienceName.trim()) e.audience = t("validation.audienceName");
+    else if (!(state.ageMin >= 13 && state.ageMax <= 65 && state.ageMax >= state.ageMin)) e.audience = t("validation.ageRange");
     return e;
   }, [state, t]);
 
-  const draft = (launchNow: boolean): CampaignDraft => ({
+  const draft = (): CampaignDraft => ({
     name: state.name.trim(),
-    objective: state.objective,
+    objective: state.objective as CampaignObjective,
     dailyBudget: state.dailyBudget,
     currency: state.currency,
     startDate: new Date(state.startDate).toISOString(),
@@ -272,30 +513,229 @@ export function CampaignWizard() {
       ageMax: state.ageMax,
       genders: [state.gender],
       locations: state.locations.split(",").map((s) => s.trim()).filter(Boolean),
-      interests: state.interests.split(",").map((s) => s.trim()).filter(Boolean),
+      interests: state.interests.map((i) => i.name),
       behaviors: [],
     },
-    strategy: state.strategy,
+    // The backend stores campaign drafts separately from this transient AI plan.
+    strategy: null,
     creativeIds: state.creativeIds,
-    launchNow,
+    launchNow: false,
   });
 
+  const planFormIssues = useMemo(() => {
+    const issues: string[] = [];
+    const field = (name: string) => t(`launch.fields.${name}`);
+    if (state.creativeIds.length === 0 || state.creativeIds.length > 10) issues.push(field("creatives"));
+    // billingEvent / optimizationGoal / destinationType / specialAdCategories /
+    // callToAction are derived from the objective in buildPlanSettings(), so they
+    // are no longer customer input and are not validated here.
+    if (state.countries.length === 0) issues.push(field("countries"));
+    // promotedObject (Meta Pixel / app id) is owner configuration, not customer
+    // input, and there is no UI for it. Rather than blocking these objectives
+    // forever it is left unset and Meta's own rejection is surfaced in planError.
+    try {
+      if (!state.destinationUrl.trim() || new URL(state.destinationUrl).protocol !== "https:") issues.push(field("destinationUrl"));
+    } catch {
+      issues.push(field("destinationUrl"));
+    }
+    if (!state.primaryText.trim()) issues.push(field("primaryText"));
+    if (!state.headline.trim()) issues.push(field("headline"));
+    return Array.from(new Set(issues));
+  }, [state, t]);
+
+  const buildPlanSettings = (): MetaAdPlanSettings => {
+    const derived =
+      META_OBJECTIVE_DEFAULTS[state.objective] ?? META_OBJECTIVE_DEFAULTS.traffic;
+    return {
+    objective: state.objective as CampaignObjective,
+    creativeIds: state.creativeIds,
+    // Age and gender are read straight off the targeting object, so they need
+    // no lookup. geo_locations is always sent: meta_ads.py rejects a targeting
+    // block without it, and planFormIssues already requires at least one country.
+    // Nothing here is inferred from free text.
+    targeting: {
+      age_min: state.ageMin,
+      age_max: state.ageMax,
+      ...(state.gender === "all"
+        ? {}
+        : { genders: [GENDER_TO_META[state.gender]] }),
+      geo_locations: { countries: [...state.countries] },
+      // Meta rejects interest names; only Targeting Search IDs are accepted.
+      ...(state.interests.length > 0
+        ? {
+            flexible_spec: [
+              { interests: state.interests.map(({ id, name }) => ({ id, name })) },
+            ],
+          }
+        : {}),
+    },
+    billingEvent: state.billingEvent ?? derived.billingEvent,
+    optimizationGoal: state.optimizationGoal ?? derived.optimizationGoal,
+    // Keep the current explicit no-special-category state unless MCP returns an
+    // exact, validated value from a brief that states one.
+    specialAdCategories: [...state.specialAdCategories],
+    destinationType: state.destinationType ?? derived.destinationType,
+    // Left unset: needs a Meta Pixel / app object the workspace owner configures.
+    promotedObject: undefined,
+    destinationUrl: state.destinationUrl.trim() || undefined,
+    primaryText: state.primaryText.trim() || undefined,
+    headline: state.headline.trim() || undefined,
+    callToAction: {
+      type: state.callToActionType || "LEARN_MORE",
+      value: { link: state.destinationUrl.trim(), link_caption: state.headline.trim() },
+    },
+    instagramActorId: state.instagramActorId.trim() || undefined,
+    };
+  };
+
+  const preparePlan = async () => {
+    setPlanError(null);
+    setPlanPreview(null);
+    setPlanExecution(null);
+    setRetryReview(false);
+    try {
+      const result = await prepareMetaPlan.mutateAsync({ draft: draft(), plan: buildPlanSettings() });
+      setPreparedPlan(result);
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const requestPlanApproval = async () => {
+    if (!preparedPlan) return;
+    setPlanError(null);
+    try {
+      const result = await previewMetaPlan.mutateAsync(preparedPlan.recommendationId);
+      setPlanPreview(result);
+      setRetryReview(false);
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const reviewSafeMetaRetry = async () => {
+    if (!preparedPlan || !getMetaPlanRecoveryAction(planExecution)) return;
+    setPlanError(null);
+    try {
+      const result = await previewMetaPlan.mutateAsync(preparedPlan.recommendationId);
+      setPlanPreview(result);
+      setRetryReview(true);
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const executeApprovedPlan = async () => {
+    if (!preparedPlan || !planPreview?.requiresConfirmation) return;
+    setPlanError(null);
+    try {
+      const result = await confirmMetaPlan.mutateAsync(preparedPlan.recommendationId);
+      setPlanExecution(result);
+      setRetryReview(false);
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const requestActivation = async (confirm: boolean) => {
+    if (!preparedPlan) return;
+    setPlanError(null);
+    try {
+      const result = await activateMetaPlan.mutateAsync({
+        recommendationId: preparedPlan.recommendationId,
+        confirm,
+      });
+      setActivation(result);
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : String(error));
+    }
+  };
   const canNext = !errors[step];
+  const recoveryAction = getMetaPlanRecoveryAction(planExecution);
   const next = () => setStep(STEPS[Math.min(idx + 1, STEPS.length - 1)]);
   const back = () => setStep(STEPS[Math.max(idx - 1, 0)]);
 
   const generate = () =>
     genStrategy.mutate(
       {
-        objective: state.objective,
+        campaignName: state.name,
+        objective: state.objective as CampaignObjective,
         dailyBudget: state.dailyBudget,
+        currency: state.currency,
+        language: locale === "ar" ? "ar" : "en",
         brief: state.brief || undefined,
-        audience: { name: state.audienceName, ageMin: state.ageMin, ageMax: state.ageMax, locations: state.locations.split(",").map((s) => s.trim()) },
+        audience: {
+          name: state.audienceName,
+          ageMin: state.ageMin,
+          ageMax: state.ageMax,
+          genders: [state.gender],
+          locations: state.locations.split(",").map((s) => s.trim()).filter(Boolean),
+          interests: state.interests.map((i) => i.name),
+          behaviors: [],
+        },
       },
       { onSuccess: (s) => set("strategy", s) },
     );
 
-  const metaConnected = meta.data?.status === "connected";
+  const metaConnected = meta.data?.campaignReady === true;
+
+  const requestMetaAssist = async () => {
+    if (!state.strategy || !state.objective) return;
+    const derived = META_OBJECTIVE_DEFAULTS[state.objective] ?? META_OBJECTIVE_DEFAULTS.traffic;
+    setAssistError(null);
+    setAssistResult(null);
+    try {
+      const result = await assistMetaPlan.mutateAsync({
+        campaignName: state.name,
+        objective: state.objective,
+        dailyBudget: state.dailyBudget,
+        currency: state.currency,
+        brief: state.brief || undefined,
+        language: locale === "ar" ? "ar" : "en",
+        strategy: state.strategy,
+        audience: {
+          name: state.audienceName,
+          ageMin: state.ageMin,
+          ageMax: state.ageMax,
+          gender: state.gender,
+          countries: [...state.countries],
+          interests: state.interests.map((interest) => interest.name),
+        },
+        destinationUrl: state.destinationUrl || undefined,
+        primaryText: state.primaryText,
+        headline: state.headline,
+        callToActionType: state.callToActionType || undefined,
+        billingEvent: state.billingEvent ?? derived.billingEvent,
+        optimizationGoal: state.optimizationGoal ?? derived.optimizationGoal,
+        destinationType: state.destinationType ?? derived.destinationType,
+        specialAdCategories: [...state.specialAdCategories],
+      });
+      setState((current) => ({
+        ...current,
+        primaryText: current.primaryText.trim() ? current.primaryText : result.primaryText ?? current.primaryText,
+        headline: current.headline.trim() ? current.headline : result.headline ?? current.headline,
+        callToActionType:
+          result.fieldValidation.callToActionType === "valid" && result.callToActionType
+            ? result.callToActionType
+            : current.callToActionType,
+        billingEvent:
+          result.fieldValidation.billingEvent === "valid" && result.billingEvent
+            ? result.billingEvent
+            : current.billingEvent,
+        optimizationGoal:
+          result.fieldValidation.optimizationGoal === "valid" && result.optimizationGoal
+            ? result.optimizationGoal
+            : current.optimizationGoal,
+        destinationType:
+          result.fieldValidation.destinationType === "valid" && result.destinationType
+            ? result.destinationType
+            : current.destinationType,
+        specialAdCategories:
+          result.fieldValidation.specialAdCategories === "valid" && result.specialAdCategories
+            ? result.specialAdCategories
+            : current.specialAdCategories,
+      }));
+      setAssistResult(result);
+    } catch (error) {
+      setAssistError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -356,7 +796,7 @@ export function CampaignWizard() {
               </div>
               <div className="space-y-1.5">
                 <Label>{t("goal.objective")}</Label>
-                <Select value={state.objective} onValueChange={(v) => set("objective", v as CampaignObjective)}>
+                <Select value={state.objective || ""} onValueChange={(v) => set("objective", v as CampaignObjective)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -378,7 +818,7 @@ export function CampaignWizard() {
                   <Label>{t("goal.currency")}</Label>
                   <Select value={state.currency} onValueChange={(v) => set("currency", v)}>
                     <SelectTrigger className="w-24">
-                      <SelectValue />
+                      <SelectValue placeholder={t("goal.currencyPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
                       {["EGP", "USD", "SAR", "AED"].map((c) => (
@@ -409,11 +849,11 @@ export function CampaignWizard() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="amin">{t("audience.ageMin")}</Label>
-                <Input id="amin" type="number" min={13} max={65} value={state.ageMin} onChange={(e) => set("ageMin", Number(e.target.value))} />
+                <Input id="amin" type="number" min={13} max={65} value={state.ageMin || ""} onChange={(e) => set("ageMin", Number(e.target.value))} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="amax">{t("audience.ageMax")}</Label>
-                <Input id="amax" type="number" min={13} max={65} value={state.ageMax} onChange={(e) => set("ageMax", Number(e.target.value))} />
+                <Input id="amax" type="number" min={13} max={65} value={state.ageMax || ""} onChange={(e) => set("ageMax", Number(e.target.value))} />
               </div>
               <div className="space-y-1.5">
                 <Label>{t("audience.gender")}</Label>
@@ -434,7 +874,59 @@ export function CampaignWizard() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="int">{t("audience.interests")}</Label>
-                <Input id="int" value={state.interests} onChange={(e) => set("interests", e.target.value)} />
+                <Input
+                  id="int"
+                  value={interestQuery}
+                  onChange={(e) => setInterestQuery(e.target.value)}
+                  placeholder={t("audience.interestsPlaceholder")}
+                  autoComplete="off"
+                />
+                {state.interests.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {state.interests.map((i) => (
+                      <span
+                        key={i.id}
+                        className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
+                      >
+                        {i.name}
+                        <button
+                          type="button"
+                          className="p-0.5 text-muted-foreground hover:text-foreground"
+                          aria-label={t("audience.removeInterest", { name: i.name })}
+                          onClick={() =>
+                            set("interests", state.interests.filter((x) => x.id !== i.id))
+                          }
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {interestOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {interestOptions.map((r) => (
+                      <Button
+                        key={r.id}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() =>
+                          set("interests", [...state.interests, { id: r.id, name: r.name }])
+                        }
+                      >
+                        <Plus className="h-3 w-3" />
+                        {r.name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {interestSearch.data && !interestSearch.data.available
+                    ? t("audience.interestsUnavailable")
+                    : t("audience.interestsHint")}
+                </p>
               </div>
             </div>
           )}
@@ -457,16 +949,50 @@ export function CampaignWizard() {
                 onRetry={generate}
                 emptyTitle={t("strategy.empty")}
               >
-                {(s) => <StrategyView strategy={s} />}
+                {(s) => <GeneratedStrategyView strategy={s} />}
               </AsyncBoundary>
             </div>
           )}
 
           {step === "creatives" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">{t("creatives.pick")}</p>
                 <Badge variant="secondary">{t("creatives.selected", { count: state.creativeIds.length })}</Badge>
+              </div>
+
+              {/* Upload lives here rather than on the creatives page: this is the
+                  step where a missing image actually blocks the plan. */}
+              <div className="space-y-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleUploadPicked}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={upload.isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {upload.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    {upload.isPending ? t("creatives.uploading") : t("creatives.upload")}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">{t("creatives.uploadHint")}</p>
+                </div>
+                {upload.isError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {upload.error instanceof Error ? upload.error.message : t("creatives.uploadFailed")}
+                  </p>
+                ) : null}
               </div>
               <AsyncBoundary
                 {...creatives}
@@ -501,7 +1027,7 @@ export function CampaignWizard() {
                 <ReviewItem label={t("review.goal")}>
                   <p className="font-medium text-base text-foreground">{state.name}</p>
                   <p className="text-muted-foreground mt-0.5">
-                    {to(state.objective)} · {formatCurrency(state.dailyBudget, state.currency, locale)}/day
+                    {to(state.objective as CampaignObjective)} · {formatCurrency(state.dailyBudget, state.currency, locale)}/day
                   </p>
                   {state.startDate && state.endDate && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -517,9 +1043,9 @@ export function CampaignWizard() {
                   <p className="text-xs text-muted-foreground mt-1">
                     📍 {state.locations}
                   </p>
-                  {state.interests && (
+                  {state.interests.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                      🎯 {state.interests}
+                      🎯 {state.interests.map((it) => it.name).join(", ")}
                     </p>
                   )}
                 </ReviewItem>
@@ -540,52 +1066,273 @@ export function CampaignWizard() {
                   disabled={isPending}
                   onClick={() => {
                     try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
-                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(false) } });
+                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft() } });
                   }}
                 >
                   {t("launch.saveDraft")}
                 </Button>
                 <Button
                   size="sm"
-                  disabled={isPending}
-                  onClick={() => {
-                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
-                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(true) } });
-                  }}
+                  onClick={() => setStep("launch")}
                 >
-                  {isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                  {t("launch.launchNow")}
+                  {t("launch.reviewPlan")}
                 </Button>
               </div>
             </div>
           )}
 
           {step === "launch" && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">{t("launch.desc")}</p>
-              {!metaConnected && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("launch.requiresMeta")}</p>}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => {
-                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
-                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(false) } });
-                  }}
-                >
-                  {t("launch.saveDraft")}
-                </Button>
-                <Button
-                  disabled={isPending || !metaConnected}
-                  onClick={() => {
-                    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
-                    dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft(true) } });
-                  }}
-                >
-                  {isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                  {t("launch.launchNow")}
-                </Button>
+            <div className="space-y-5">
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
+                <p className="font-medium">{t("launch.desc")}</p>
+                <p className="mt-1 text-muted-foreground">{t("launch.pausedOnly")}</p>
               </div>
+
+              {!preparedPlan ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">{t("launch.settingsIntro")}</p>
+                  {!metaConnected && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                      <p>{meta.isLoading ? t("launch.checkingMeta") : t("launch.requiresMeta")}</p>
+                      {!meta.isLoading && meta.data?.errorMessage && (
+                        <p className="mt-1 font-medium">{meta.data.errorMessage}</p>
+                      )}
+                    </div>
+                  )}
+                  <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{t("launch.assistTitle")}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{t("launch.assistHint")}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!state.strategy || !metaConnected || assistMetaPlan.isPending || !!errors.goal || !!errors.audience}
+                        onClick={requestMetaAssist}
+                      >
+                        {assistMetaPlan.isPending ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : <Sparkles className="me-2 h-4 w-4" />}
+                        {assistMetaPlan.isPending ? t("launch.assistPending") : t("launch.assistButton")}
+                      </Button>
+                    </div>
+                    {!state.strategy && <p className="mt-2 text-xs text-muted-foreground">{t("launch.assistNeedsStrategy")}</p>}
+                    {!metaConnected && <p className="mt-2 text-xs text-muted-foreground">{t("launch.assistNeedsConnection")}</p>}
+                    {assistError && <p role="alert" className="mt-2 text-sm text-destructive">{assistError}</p>}
+                    {assistResult && (
+                      <div className="mt-3 space-y-2 border-t border-primary/10 pt-3 text-xs">
+                        <p className="font-medium">
+                          {assistResult.mcpContextAvailable ? t("launch.assistContextReady") : t("launch.assistContextUnavailable")}
+                        </p>
+                        <p className="text-muted-foreground">{t("launch.assistDraftOnly")}</p>
+                        {assistResult.assumptions.length > 0 && (
+                          <div>
+                            <p className="font-medium">{t("launch.assistAssumptions")}</p>
+                            <ul className="mt-1 list-inside list-disc text-muted-foreground">
+                              {assistResult.assumptions.map((item, index) => <li key={`assumption-${index}`}>{item}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {assistResult.missingInputs.length > 0 && (
+                          <div>
+                            <p className="font-medium">{t("launch.assistMissing")}</p>
+                            <ul className="mt-1 list-inside list-disc text-muted-foreground">
+                              {assistResult.missingInputs.map((item, index) => <li key={`missing-${index}`}>{item}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <PlanField label={t("launch.fields.destinationUrl")}>
+                      <Input type="url" value={state.destinationUrl} onChange={(e) => set("destinationUrl", e.target.value)} placeholder="https://" />
+                    </PlanField>
+                    <PlanField label={t("launch.fields.headline")}>
+                      <Input value={state.headline} onChange={(e) => set("headline", e.target.value)} />
+                    </PlanField>
+                    <PlanField label={t("launch.fields.primaryText")} className="sm:col-span-2">
+                      <Textarea value={state.primaryText} onChange={(e) => set("primaryText", e.target.value)} rows={3} />
+                    </PlanField>
+                  <div>
+                    <Label>{t("launch.fields.countries")}</Label>
+                    <p className="mb-2 text-xs text-muted-foreground">{t("launch.hints.countries")}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {COUNTRY_OPTIONS.map((c) => {
+                        const on = state.countries.includes(c.code);
+                        return (
+                          <Button
+                            key={c.code}
+                            type="button"
+                            variant={on ? "default" : "outline"}
+                            size="sm"
+                            onClick={() =>
+                              set(
+                                "countries",
+                                on
+                                  ? state.countries.filter((x) => x !== c.code)
+                                  : [...state.countries, c.code],
+                              )
+                            }
+                          >
+                            {locale === "ar" ? c.ar : c.en}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {PROMOTED_OBJECT_OBJECTIVES.includes(state.objective) && (
+                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                      {t("launch.promotedObjectNotice")}
+                    </p>
+                  )}
+                  </div>
+                  {planFormIssues.length > 0 && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                      <p className="font-medium">{t("launch.completeRequired")}</p>
+                      {/* The message above promises the fields are listed below; name
+                          them, otherwise the button is dead with no explanation. */}
+                      <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-muted-foreground">
+                        {planFormIssues.map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {planError && <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{planError}</p>}
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" disabled={isPending || !!errors.goal || !!errors.audience} onClick={() => dispatch({ type: "CREATE_CAMPAIGN", payload: { draft: draft() } })}>
+                      {t("launch.saveDraft")}
+                    </Button>
+                    <Button disabled={prepareMetaPlan.isPending || planFormIssues.length > 0 || !!errors.goal || !!errors.audience} onClick={preparePlan}>
+                      {prepareMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                      {t("launch.preparePlan")}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
+                    <p className="font-medium">{preparedPlan.title}</p>
+                    <p className="mt-1">{t(planExecution ? "launch.metaAttempted" : "launch.savedNoWrite")}</p>
+                  </div>
+                  {!planPreview && (
+                    <div className="space-y-3">
+                      {!metaConnected && (
+                        <p className="text-sm text-destructive">
+                          {meta.data?.errorMessage ?? t("launch.requiresMeta")}
+                        </p>
+                      )}
+                      <Button disabled={!metaConnected || previewMetaPlan.isPending} onClick={requestPlanApproval}>
+                        {previewMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                        {t("launch.reviewPlan")}
+                      </Button>
+                    </div>
+                  )}
+                  {planPreview && (
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium">{planPreview.message}</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <ReviewItem label={t("review.goal")}>
+                          <p className="font-medium">{state.name}</p>
+                          <p className="text-muted-foreground">{to(state.objective as CampaignObjective)} · {formatCurrency(state.dailyBudget, state.currency, locale)}/day</p>
+                        </ReviewItem>
+                        <ReviewItem label={t("review.audience")}>
+                          <p className="font-medium">{state.audienceName}</p>
+                          <p className="text-muted-foreground">{state.ageMin}–{state.ageMax} · {state.locations || "—"}</p>
+                        </ReviewItem>
+                        <ReviewItem label={t("review.creatives")}>
+                          <p>{t("review.creativeCount", { count: state.creativeIds.length })}</p>
+                          <p className="text-muted-foreground">{meta.data?.accountName ?? meta.data?.accountId ?? t("launch.metaAccountNotNamed")}</p>
+                        </ReviewItem>
+                        <ReviewItem label={t("launch.fields.destinationUrl")}>
+                          <p className="break-all">{state.destinationUrl || "—"}</p>
+                        </ReviewItem>
+                      </div>
+                      {planPreview.requiresConfirmation && (!planExecution || retryReview) && (
+                        <Button disabled={confirmMetaPlan.isPending || previewMetaPlan.isPending || !metaConnected} onClick={executeApprovedPlan}>
+                          {confirmMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                          {t(
+                            retryReview
+                              ? recoveryAction === "resume"
+                                ? "launch.confirmResume"
+                                : "launch.confirmRetry"
+                              : "launch.confirmPaused",
+                          )}
+                        </Button>
+                      )}
+                      {planExecution && (
+                        <div className={cn("rounded-md border p-3 text-sm", planExecution.executed ? "border-emerald-500/30 bg-emerald-500/10" : "border-destructive/30 bg-destructive/5")}>
+                          <p className="font-medium">{planExecution.message}</p>
+                          {planExecution.recommendation.executionResult && (
+                            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs" dir="ltr">{JSON.stringify(planExecution.recommendation.executionResult, null, 2)}</pre>
+                          )}
+                          {recoveryAction && !retryReview && (
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <p className="text-xs text-muted-foreground">
+                                {t(recoveryAction === "resume" ? "launch.resumeSafeHint" : "launch.retrySafeHint")}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={confirmMetaPlan.isPending || previewMetaPlan.isPending || !metaConnected}
+                                onClick={reviewSafeMetaRetry}
+                              >
+                                {previewMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                                {t(recoveryAction === "resume" ? "launch.resumeMetaCreation" : "launch.retryMetaCreation")}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {planExecution?.executed && (
+                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                          {activation?.executed ? (
+                            <p className="font-medium text-emerald-600 dark:text-emerald-400">{activation.message}</p>
+                          ) : (
+                            <>
+                              <p className="font-medium">{t("launch.activateTitle")}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{t("launch.activateWarn")}</p>
+                              {activation?.requiresConfirmation && (
+                                <ul className="mt-2 list-inside list-disc text-xs" dir="ltr">
+                                  {activation.targets.map((target) => (
+                                    <li key={target}>{target}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {!activation?.requiresConfirmation ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={activateMetaPlan.isPending || !metaConnected}
+                                    onClick={() => requestActivation(false)}
+                                  >
+                                    {t("launch.activatePreview")}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    disabled={activateMetaPlan.isPending || !metaConnected}
+                                    onClick={() => requestActivation(true)}
+                                  >
+                                    {activateMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                                    {t("launch.activateConfirm")}
+                                  </Button>
+                                )}
+                              </div>
+                              {activation?.unavailableReason && (
+                                <p className="mt-2 text-xs text-destructive">{activation.unavailableReason}</p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {planError && <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{planError}</p>}
+                </div>
+              )}
             </div>
           )}
 
@@ -614,6 +1361,26 @@ function ReviewItem({ label, children }: { label: string; children: React.ReactN
     <div className="rounded-md border p-3">
       <dt className="mb-1 text-xs text-muted-foreground">{label}</dt>
       <dd>{children}</dd>
+    </div>
+  );
+}
+
+function PlanField({
+  label,
+  hint,
+  className,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <Label>{label}</Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

@@ -36,7 +36,7 @@ Human-in-the-loop is enforced **centrally in step 3**, not per button. An action
 | `t(key, values)` | translations in the `actions` namespace |
 | `confirm({ title, description?, diff, confirmLabel? })` | before/after dialog → `Promise<boolean>` |
 | `pickCampaign(title)` | campaign picker dialog → `Promise<string \| null>` |
-| `ui.setCreateCreative(...)`, `ui.setCampaignPrefill(...)` | hand off to UI dialogs / wizard |
+| `ui.setCreateCreative(...)`, `ui.setCampaignPrefill(...)`, `ui.setPendingPrompt(...)` | hand off to UI dialogs / wizard / Layla chat |
 
 ## `ActionResult`
 
@@ -51,7 +51,7 @@ Human-in-the-loop is enforced **centrally in step 3**, not per button. An action
 | Type | Payload schema | Confirm? | Handler behaviour | Navigates to |
 |---|---|---|---|---|
 | `CREATE_CAMPAIGN` | `{ draft?: CampaignDraft, prefill?: Partial<CampaignDraft>, angle?: string }` | **Only if `draft.launchNow`** (diff: status draft→active, budget 0→X) | With `draft`: `api.createCampaign` → invalidate `campaigns`. Without: store `prefill` and open the wizard. | `/campaigns/:id` or `/campaigns/new` |
-| `CREATE_CREATIVE` | `{ kind: "image"\|"video"\|"copy" (default image), brief?, campaignId?, referenceAnalysisId?, aspectRatio?, count? }` | No | With `brief`: `api.generateCreative` → invalidate `creatives`. Without: open the Create dialog pre-set to `kind` (the dialog re-dispatches with a brief). | `/creatives` |
+| `CREATE_CREATIVE` | `{ kind: "image"\|"video"\|"copy" (default image), brief?, campaignId?, referenceAnalysisId?, aspectRatio?, count? }` | No | Image with a brief → `api.generateCreative`; image without a brief → Create dialog; video → queue Layla's guided prompt chat; copy → text dialog. | `/creatives` or `/assistant` |
 | `GENERATE_VARIATIONS` | `{ creativeId, count (1–6, default 3) }` | No | `api.generateVariations` → invalidate `creatives` | `/creatives` |
 | `ANALYZE_CAMPAIGN` | `{ campaignId }` | No | `api.startTask({type, payload})` → invalidate `conversations` | `/assistant/:conversationId` from `task.resultRef` |
 | `ANALYZE_CREATIVE` | `{ creativeId }` | No | same as above | same |
@@ -69,7 +69,7 @@ Human-in-the-loop is enforced **centrally in step 3**, not per button. An action
 | `DETECT_MARKET_GAPS` | `{}` | No | agent task | same |
 | `GENERATE_MARKETING_STRATEGY` | `{ brief? }` | No | agent task | same |
 | `GENERATE_CONTENT_CALENDAR` | `GenerateContentCalendarInput` (`month` optional → current month) | No | `api.generateContentCalendar` → invalidate `content` | `/calendar?month=YYYY-MM` |
-| `GENERATE_TEXT` | `GenerateTextInput` `{ tool, brief, campaignId?, creativeId?, language? }` | No | `api.generateText` → result placed in `ui.generatedText` (rendered by the Write-with-AI dialog; copy / "Use as creative brief" → `CREATE_CREATIVE`) | — |
+| `GENERATE_TEXT` | `GenerateTextInput` `{ tool, brief, campaignId?, creativeId?, language? }` | No | Image/video prompt tools queue Layla's guided chat; other text tools call `api.generateText` and place the result in `ui.generatedText` (copy / "Use as creative brief" → `CREATE_CREATIVE`). | `/assistant` for image/video prompts; otherwise — |
 | `UPDATE_AGENT` | `UpdateAgentInput` `{ id, patch }` | No (persona config is not a live-campaign change) | `api.updateAgent` → invalidate `agents` | — |
 | `UPDATE_CAMPAIGN` *(added, see note)* | `{ campaignId, patch: { status?, dailyBudget?, name? } }` | **Yes** — diff per changed field, before = current cached campaign | `api.updateCampaign` → invalidate `campaign`, `campaigns` | — |
 
@@ -97,7 +97,7 @@ Human-in-the-loop is enforced **centrally in step 3**, not per button. An action
 | Research hub (`/research`) tool cards | `ANALYZE_WEBSITE`, `RESEARCH_COMPETITORS`, `ANALYZE_SOCIAL_PROFILE`, `ANALYZE_REVIEWS`, `ANALYZE_MARKET`, `ANALYZE_KEYWORDS`, `ANALYZE_COMPETITOR_CREATIVES`, `DETECT_MARKET_GAPS`, `GENERATE_MARKETING_STRATEGY` |
 | Assistant chat (natural language) | the mock router triggers the same research/strategy/calendar task types from phrases like "analyze website …", "keywords for …", "plan a content calendar" |
 | Calendar (`/calendar`) → Generate / Regenerate dialog | `GENERATE_CONTENT_CALENDAR`; item sheet → `CREATE_CREATIVE` (edit/delete of items use `useUpdateContentItem` / `useDeleteContentItem` mutations) |
-| Creatives → "Write with AI" menu | `GENERATE_TEXT` (5 text tools) → `CREATE_CREATIVE` with generated text as brief |
+| Creatives → "Write with AI" menu | Image/video prompts start Layla chat; other `GENERATE_TEXT` tools return text for reuse with `CREATE_CREATIVE` |
 | Agents (`/agents`) → enable switch + persona editor | `UPDATE_AGENT` |
 
 ## Adding a new action

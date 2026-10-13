@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 
 interface AsyncBoundaryProps<T> {
   isLoading: boolean;
+  /** React Query v5 can be pending before its initial request starts. */
+  isPending?: boolean;
   isError: boolean;
   error?: unknown;
   data: T | null | undefined;
@@ -32,6 +34,7 @@ interface AsyncBoundaryProps<T> {
  */
 export function AsyncBoundary<T>({
   isLoading,
+  isPending = false,
   isError,
   error,
   data,
@@ -46,7 +49,7 @@ export function AsyncBoundary<T>({
 }: AsyncBoundaryProps<T>) {
   const t = useTranslations("common");
 
-  if (isLoading) {
+  if (isPending || isLoading) {
     return <div className={className}>{skeleton ?? <DefaultSkeleton />}</div>;
   }
 

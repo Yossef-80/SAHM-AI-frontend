@@ -420,6 +420,8 @@ export const performance = (seed: number): MetricPoint[] =>
 
 export const metaConnection: MetaConnection = {
   status: "not_connected",
+  campaignReady: false,
+  pageConfigured: false,
   accountId: null,
   accountName: null,
   pageName: null,

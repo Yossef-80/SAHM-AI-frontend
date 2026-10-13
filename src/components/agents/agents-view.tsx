@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Pencil } from "lucide-react";
+import { MessageSquare, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { AsyncBoundary, CardGridSkeleton } from "@/components/shared/async-boundary";
 import { useAction } from "@/hooks/use-action";
 import { useAgents } from "@/hooks/use-api";
+import { useAssistantStore } from "@/store/assistant-store";
 import { cn } from "@/lib/utils";
 import type { Agent } from "@/types";
 import { AgentEditorSheet } from "./agent-editor-sheet";
@@ -40,6 +42,9 @@ export function AgentsView() {
 function AgentCard({ agent, onEdit }: { agent: Agent; onEdit: () => void }) {
   const t = useTranslations("agents");
   const { dispatch, pending } = useAction();
+  const router = useRouter();
+  const setPersonaId = useAssistantStore((s) => s.setPersonaId);
+  const setPendingPrompt = useAssistantStore((s) => s.setPendingPrompt);
   return (
     <Card className={cn("flex flex-col", !agent.enabled && "opacity-70")}>
       <CardHeader className="flex-row items-start gap-3 space-y-0 pb-2">
@@ -76,10 +81,28 @@ function AgentCard({ agent, onEdit }: { agent: Agent; onEdit: () => void }) {
             ))}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="w-full" onClick={onEdit}>
-          <Pencil className="me-2 h-3.5 w-3.5" />
-          {t("edit")}
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            size="sm"
+            onClick={() => {
+              // One sticky persona for the whole conversation: the composer keeps
+              // sending it, so the chat stays with this agent instead of falling
+              // back to automatic routing after the first message.
+              setPersonaId(agent.id);
+              // Drop any prompt queued by another page so it does not auto-send
+              // on arrival and hijack this conversation.
+              setPendingPrompt(null);
+              router.push("/assistant");
+            }}
+          >
+            <MessageSquare className="me-2 h-3.5 w-3.5" />
+            {t("chat")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil className="me-2 h-3.5 w-3.5" />
+            {t("edit")}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

@@ -10,11 +10,13 @@ export const qk = {
   campaignLearnings: (id: string) => ["campaign", id, "learnings"] as const,
   creatives: (campaignId?: string) => ["creatives", campaignId ?? "all"] as const,
   creative: (id: string) => ["creative", id] as const,
+  creativeReferences: ["creativeReferences"] as const,
   insights: (filters?: Record<string, unknown>) => ["insights", filters ?? {}] as const,
   conversations: ["conversations"] as const,
   conversation: (id: string) => ["conversation", id] as const,
   task: (id: string) => ["task", id] as const,
   meta: ["integrations", "meta"] as const,
+  metaInterestSearch: (q: string) => ["integrations", "meta", "interests", q] as const,
   settings: ["settings"] as const,
   /** `GET /auth/me` — the boot check. Not the token: that lives in the auth store. */
   session: ["auth", "me"] as const,

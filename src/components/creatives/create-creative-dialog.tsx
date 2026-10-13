@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAction } from "@/hooks/use-action";
-import { useCampaigns } from "@/hooks/use-api";
+import { useBusinessProfileForm, useCampaigns, useCreativeReferences } from "@/hooks/use-api";
 import { useUiStore } from "@/store/ui-store";
 
 const RATIOS = ["1:1", "4:5", "9:16", "16:9"] as const;
@@ -26,11 +26,20 @@ export function CreateCreativeDialog() {
   const setReq = useUiStore((s) => s.setCreateCreative);
   const { dispatch, isPending } = useAction();
   const campaigns = useCampaigns();
+  const references = useCreativeReferences();
+  const profile = useBusinessProfileForm();
+  const savedVisualStyle = profile.data?.visualStyle?.trim() ?? "";
 
   const [brief, setBrief] = useState("");
   const [campaignId, setCampaignId] = useState<string>("none");
   const [ratio, setRatio] = useState<(typeof RATIOS)[number]>("1:1");
   const [count, setCount] = useState("1");
+  const [useSavedStyle, setUseSavedStyle] = useState(false);
+  // An analyzed reference switches generation from /images/generations to
+  // /images/edits, i.e. the output is edited *from* the reference instead of
+  // being drawn from a description. That is the difference between "inspired
+  // by" and "matches", so it is an explicit choice.
+  const [referenceId, setReferenceId] = useState<string>("none");
 
   useEffect(() => {
     if (req) {
@@ -38,6 +47,8 @@ export function CreateCreativeDialog() {
       setCampaignId(req.campaignId ?? "none");
       setRatio(req.kind === "video" ? "9:16" : "1:1");
       setCount("1");
+      setUseSavedStyle(false);
+      setReferenceId(req.referenceAnalysisId ?? "none");
     }
   }, [req]);
 
@@ -55,6 +66,28 @@ export function CreateCreativeDialog() {
             <Textarea id="brief" rows={4} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder={t("briefPlaceholder")} />
             {!valid && brief.length > 0 && <p className="text-xs text-destructive">{t("briefRequired")}</p>}
           </div>
+          {req?.kind !== "copy" && (
+            <div className="space-y-2 rounded-md border border-dashed p-3">
+              <Button
+                type="button"
+                size="sm"
+                variant={useSavedStyle ? "secondary" : "outline"}
+                disabled={!savedVisualStyle || isPending}
+                aria-pressed={useSavedStyle}
+                onClick={() => setUseSavedStyle((value) => !value)}
+              >
+                <Sparkles className="me-2 h-4 w-4" />
+                {useSavedStyle ? t("styleIncluded") : t("includeSavedStyle")}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {savedVisualStyle
+                  ? useSavedStyle
+                    ? t("savedStylePreview", { style: savedVisualStyle })
+                    : t("savedStyleAvailable")
+                  : t("styleNotSet")}
+              </p>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>{t("campaign")}</Label>
@@ -89,6 +122,27 @@ export function CreateCreativeDialog() {
                 </Select>
               </div>
             )}
+            {req?.kind !== "copy" && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>{t("reference")}</Label>
+                <Select value={referenceId} onValueChange={setReferenceId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("noReference")}</SelectItem>
+                    {(references.data ?? []).map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.sourceName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {referenceId === "none" ? t("referenceHintOff") : t("referenceHintOn")}
+                </p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>{t("count")}</Label>
               <Select value={count} onValueChange={setCount}>
@@ -114,13 +168,18 @@ export function CreateCreativeDialog() {
             disabled={!valid || isPending}
             onClick={async () => {
               if (!req) return;
+              const styleNote = useSavedStyle && savedVisualStyle
+                ? t("preferredStylePrompt", { style: savedVisualStyle })
+                : "";
+              const finalBrief = [brief.trim(), styleNote].filter(Boolean).join("\n\n");
               const res = await dispatch({
                 type: "CREATE_CREATIVE",
                 payload: {
                   kind: req.kind,
-                  brief: brief.trim(),
+                  brief: finalBrief,
                   campaignId: campaignId === "none" ? null : campaignId,
-                  referenceAnalysisId: req.referenceAnalysisId,
+                  referenceAnalysisId:
+                    referenceId === "none" ? undefined : referenceId,
                   aspectRatio: req.kind === "copy" ? undefined : ratio,
                   count: Number(count),
                 },

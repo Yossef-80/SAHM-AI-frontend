@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { dispatchAction, ActionCancelledError } from "@/lib/actions/dispatch";
 import type { ActionContext, ActionResult } from "@/lib/actions/registry";
 import { useUiStore } from "@/store/ui-store";
+import { useAssistantStore } from "@/store/assistant-store";
 import type { ActionRef, ActionType } from "@/types";
 
 export type DispatchInput = ActionRef | { type: ActionType; payload?: Record<string, unknown> };
@@ -27,6 +28,8 @@ export function useAction() {
   const setCreateCreative = useUiStore((s) => s.setCreateCreative);
   const setCampaignPrefill = useUiStore((s) => s.setCampaignPrefill);
   const setGeneratedText = useUiStore((s) => s.setGeneratedText);
+  const setTextRequest = useUiStore((s) => s.setTextRequest);
+  const setPendingPrompt = useAssistantStore((s) => s.setPendingPrompt);
   const [pending, setPending] = useState<ActionType | null>(null);
 
   const ctx = useMemo<ActionContext>(
@@ -37,9 +40,9 @@ export function useAction() {
       t: (key, values) => t(key, values),
       confirm: (req) => requestConfirm({ ...req, title: req.title, description: req.description }),
       pickCampaign: requestPickCampaign,
-      ui: { setCreateCreative, setCampaignPrefill, setGeneratedText },
+      ui: { setCreateCreative, setCampaignPrefill, setGeneratedText, setTextRequest, setPendingPrompt },
     }),
-    [queryClient, router, t, requestConfirm, requestPickCampaign, setCreateCreative, setCampaignPrefill, setGeneratedText],
+    [queryClient, router, t, requestConfirm, requestPickCampaign, setCreateCreative, setCampaignPrefill, setGeneratedText, setTextRequest, setPendingPrompt],
   );
 
   const dispatch = useCallback(

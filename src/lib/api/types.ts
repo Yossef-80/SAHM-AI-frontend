@@ -42,9 +42,12 @@ import type {
   Business,
   Campaign,
   CampaignDraft,
-  CampaignStrategy,
+  GeneratedCampaignStrategy,
+  MetaAdPlanAssistInput,
+  MetaAdPlanAssistResponse,
   Conversation,
   Creative,
+  CreativeReference,
   GenerateCreativeInput,
   GenerateStrategyInput,
   GenerateVariationsInput,
@@ -54,6 +57,12 @@ import type {
   ListInsightsInput,
   Message,
   MetaConnection,
+  MetaTargetingSearch,
+  MetaAdPlanSettings,
+  MetaAdPlanCreated,
+  MetaAdPlanActivationResponse,
+  MetaAdPlanApprovalResponse,
+  MetaAdInsightsResponse,
   MetricPoint,
   Recommendation,
   ReferenceAnalysis,
@@ -107,8 +116,20 @@ export interface MarketingApi {
   listCampaigns(input?: ListCampaignsInput): Promise<Campaign[]>;
   getCampaign(id: string): Promise<Campaign>;
   createCampaign(draft: CampaignDraft): Promise<Campaign>;
+  /** Save local draft + pending Meta plan; no Meta writes occur. */
+  prepareMetaAdPlan(draft: CampaignDraft, plan: MetaAdPlanSettings): Promise<MetaAdPlanCreated>;
+  /** Read-only LLM + Meta MCP assistance; returns an editable draft, never writes. */
+  assistMetaAdPlan(input: MetaAdPlanAssistInput): Promise<MetaAdPlanAssistResponse>;
+  /** Approval phase 1: persist the diff only. */
+  previewMetaAdPlan(recommendationId: string): Promise<MetaAdPlanApprovalResponse>;
+  /** Approval phase 2: create the reviewed hierarchy, all PAUSED. */
+  confirmMetaAdPlan(recommendationId: string): Promise<MetaAdPlanApprovalResponse>;
+  activateMetaAdPlan(
+    recommendationId: string,
+    confirm: boolean,
+  ): Promise<MetaAdPlanActivationResponse>;
   updateCampaign(input: UpdateCampaignInput): Promise<Campaign>;
-  generateStrategy(input: GenerateStrategyInput): Promise<CampaignStrategy>;
+  generateStrategy(input: GenerateStrategyInput): Promise<GeneratedCampaignStrategy>;
   getCampaignPerformance(id: string): Promise<MetricPoint[]>;
   getCampaignRecommendations(id: string): Promise<Recommendation[]>;
   getCampaignLearnings(id: string): Promise<Learning[]>;
@@ -118,12 +139,17 @@ export interface MarketingApi {
   listCreatives(campaignId?: string): Promise<Creative[]>;
   getCreative(id: string): Promise<Creative>;
   generateCreative(input: GenerateCreativeInput): Promise<Creative[]>;
+  /** Upload a user-supplied image; the backend stores its bytes inline. */
+  uploadCreative(input: { file: File; campaignId?: string; note?: string }): Promise<Creative>;
   generateVariations(input: GenerateVariationsInput): Promise<Creative[]>;
   analyzeReference(input: AnalyzeReferenceInput): Promise<ReferenceAnalysis>;
+  listCreativeReferences(): Promise<CreativeReference[]>;
+  updateCreativeReference(input: { id: string; favorite: boolean }): Promise<CreativeReference>;
   addToCampaign(input: AddToCampaignInput): Promise<Campaign>;
 
   /* Insights & recommendations */
   getInsights(input?: ListInsightsInput): Promise<Insight[]>;
+  getCampaignAdInsights(id: string): Promise<MetaAdInsightsResponse>;
   getRecommendation(id: string): Promise<Recommendation>;
   applyRecommendation(input: ApplyRecommendationInput): Promise<Recommendation>;
   dismissRecommendation(input: ApplyRecommendationInput): Promise<Recommendation>;
@@ -148,6 +174,8 @@ export interface MarketingApi {
 
   /* Integrations */
   getMetaConnection(): Promise<MetaConnection>;
+  /** Resolve an interest name to Meta IDs; targeting rejects plain names. */
+  searchMetaInterests(query: string): Promise<MetaTargetingSearch>;
   connectMeta(): Promise<MetaConnection>;
   reauthMeta(): Promise<MetaConnection>;
   disconnectMeta(): Promise<MetaConnection>;

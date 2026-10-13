@@ -8,9 +8,11 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { Skeleton } from "@/components/ui/skeleton";
 import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { useChat } from "@/hooks/use-chat";
-import { useAssistantStore } from "@/store/assistant-store";
+import { useAgents } from "@/hooks/use-api";
+import { AUTO_PERSONA, useAssistantStore } from "@/store/assistant-store";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
-import { Composer } from "./composer";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Composer, type CreativeMode } from "./composer";
 import { ConversationList } from "./conversation-list";
 import { MessageBubble } from "./message-bubble";
 
@@ -23,25 +25,62 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
   const context = useAssistantStore((s) => s.context);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
   const setPendingPrompt = useAssistantStore((s) => s.setPendingPrompt);
+  const personaId = useAssistantStore((s) => s.personaId);
+  const setPersonaId = useAssistantStore((s) => s.setPersonaId);
+  const agents = useAgents();
   const [historyOpen, setHistoryOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-send a prompt queued from another page (Home hero).
+  // Auto-send a prompt queued from another page (Home hero, Agents → Chat,
+  // Creatives → Write with AI).
   useEffect(() => {
     if (pendingPrompt && conversationId === null && !isStreaming) {
       const p = pendingPrompt;
       setPendingPrompt(null);
-      void send({ conversationId: null, text: p.text, context: p.context, language: locale });
+      // Keep the composer on the agent the queued prompt asked for, so the rest
+      // of the conversation stays with them instead of drifting back to
+      // automatic routing.
+      if (p.personaId) setPersonaId(p.personaId);
+      void send({
+        conversationId: null,
+        text: p.text,
+        context: p.context,
+        language: locale,
+        personaId: p.personaId,
+        workflow: p.workflow,
+        promptType: p.promptType,
+        creativeMode: p.creativeMode,
+        referenceAnalysisId: p.referenceAnalysisId,
+      });
     }
-  }, [pendingPrompt, conversationId, isStreaming, send, setPendingPrompt, locale]);
+  }, [pendingPrompt, conversationId, isStreaming, send, setPendingPrompt, setPersonaId, locale]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
-  const onSend = (text: string) => send({ conversationId, text, context, language: locale });
+  const savedContext = query.data?.conversation.context;
+  // An explicit picker choice wins; otherwise follow what the conversation
+  // already recorded. This is what keeps a Layla interview with Layla.
+  // AUTO_PERSONA is a real choice, so it must not fall through to the saved one.
+  const effectivePersonaId = personaId ?? savedContext?.personaId ?? null;
+  // Sticky with the conversation, same rule as the picker above: choosing
+  // "design" once must not silently revert on the next turn.
+  const [creativeModeChoice, setCreativeMode] = useState<CreativeMode | null>(null);
+  const creativeMode: CreativeMode =
+    creativeModeChoice ?? savedContext?.creativeMode ?? "chat";
+  const workflowFields = {
+    personaId: effectivePersonaId ?? undefined,
+    workflow: savedContext?.workflow ?? undefined,
+    promptType: savedContext?.promptType ?? undefined,
+    referenceAnalysisId: savedContext?.referenceAnalysisId ?? undefined,
+    // An explicit picker choice wins, same rule as the persona picker above.
+    creativeMode,
+    language: locale,
+  };
+  const onSend = (text: string) => send({ conversationId, text, context, ...workflowFields });
   const onAnswer = (messageId: string, optionIds: string[], label: string) =>
-    send({ conversationId, text: label, context: [], answer: { messageId, optionIds }, language: locale });
+    send({ conversationId, text: label, context: [], answer: { messageId, optionIds }, ...workflowFields });
 
   const list = (
     <div className="flex flex-col gap-6">
@@ -135,6 +174,7 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
             {conversationId ? (
               <AsyncBoundary
                 isLoading={query.isLoading}
+                isPending={query.isPending}
                 isError={query.isError}
                 error={query.error}
                 data={messages}
@@ -159,7 +199,33 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
         </div>
         <div className="border-t bg-background p-3 md:p-4">
           <div className="mx-auto max-w-3xl">
-            <Composer onSend={onSend} onStop={stop} disabled={!!isStreaming} />
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{t("talkingTo")}</span>
+              <Select
+                value={effectivePersonaId ?? AUTO_PERSONA}
+                onValueChange={setPersonaId}
+              >
+                <SelectTrigger className="h-8 w-auto min-w-40 gap-1 text-xs" aria-label={t("talkingTo")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AUTO_PERSONA}>{t("agentAuto")}</SelectItem>
+                  {(agents.data ?? []).map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      <span className="me-1.5" aria-hidden>{a.emoji}</span>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Composer
+              onSend={onSend}
+              onStop={stop}
+              disabled={!!isStreaming}
+              mode={creativeMode}
+              onModeChange={setCreativeMode}
+            />
           </div>
         </div>
       </section>

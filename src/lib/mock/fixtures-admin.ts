@@ -189,11 +189,12 @@ export const mockConnectors: Connector[] = [
     configured: true,
     provider: "meta_ads",
     placeholder: false,
-    notes: "Reads campaign performance and publishes ad sets.",
+    notes: "Demo-only settings. In production, an admin configures Meta; campaign creation still requires a separate review and approval.",
     fields: [
       field("appId", "App ID", { required: true, value: "102938475610293", source: "env", maxLength: 120 }),
       field("appSecret", "App secret", { secret: true, required: true, hasValue: true, masked: "••••••••", source: "env" }),
       field("adAccountId", "Ad account ID", { required: true, value: "act_204811223344", source: "env", maxLength: 120 }),
+      field("pageId", "Facebook Page ID", { required: true, value: "fb_page_demo", source: "env", maxLength: 120 }),
       field("accessToken", "Access token", {
         secret: true,
         required: true,
