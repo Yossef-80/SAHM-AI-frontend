@@ -1112,6 +1112,18 @@ export class MockApi implements MarketingApi {
     reference.favorite = input.favorite;
     return clone(reference);
   }
+  async uploadChatAttachment(raw: { source: string; fileName?: string; mime?: string }) {
+    await sleep(150);
+    await simulate({ safe: true });
+    // Demo mode stores nothing on a server, but the id must still travel with
+    // the next message so the chat contract is exercised end to end.
+    return {
+      id: `att_${Math.random().toString(36).slice(2, 12)}`,
+      name: raw.fileName ?? "attachment.png",
+      mime: raw.mime ?? "image/png",
+      createdAt: now(),
+    };
+  }
   async addToCampaign(raw: unknown) {
     const input = AddToCampaignInputSchema.parse(raw);
     await simulate();

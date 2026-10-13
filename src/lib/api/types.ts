@@ -35,6 +35,8 @@ import type {
   AssistantProgressEvent,
   AnalyzeReferenceInput,
   Audience,
+  ChatAttachment,
+  ChatAttachmentUpload,
   ApplyRecommendationInput,
   BrandIdentityResponse,
   BrandIdentityUpdateRequest,
@@ -145,6 +147,12 @@ export interface MarketingApi {
   analyzeReference(input: AnalyzeReferenceInput): Promise<ReferenceAnalysis>;
   listCreativeReferences(): Promise<CreativeReference[]>;
   updateCreativeReference(input: { id: string; favorite: boolean }): Promise<CreativeReference>;
+  /**
+   * Store an image for the *next chat message*. Deliberately separate from
+   * `analyzeReference`: attaching a photo must not start Layla's creative
+   * workflow, switch the composer mode, or spend a vision call.
+   */
+  uploadChatAttachment(input: ChatAttachmentUpload): Promise<ChatAttachment>;
   addToCampaign(input: AddToCampaignInput): Promise<Campaign>;
 
   /* Insights & recommendations */

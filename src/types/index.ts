@@ -400,6 +400,21 @@ export const ReferenceAnalysisSchema = z.object({
 });
 export type ReferenceAnalysis = z.infer<typeof ReferenceAnalysisSchema>;
 
+export type ChatAttachmentUpload = {
+  /** `data:image/...;base64,...` — the payload the composer already builds. */
+  source: string;
+  fileName?: string;
+  mime?: string;
+};
+
+export const ChatAttachmentSchema = z.object({
+  id: IdSchema,
+  name: z.string().default(""),
+  mime: z.string().default("image/png"),
+  createdAt: IsoDateSchema.nullable().optional(),
+});
+export type ChatAttachment = z.infer<typeof ChatAttachmentSchema>;
+
 export const CreativeReferenceSchema = z.object({
   id: IdSchema,
   sourceName: z.string(),
@@ -743,7 +758,13 @@ export const AnyBlockSchema = z.union([MessageBlockSchema, UnknownBlockSchema]);
 export type AnyBlock = z.infer<typeof AnyBlockSchema>;
 
 export const ContextChipSchema = z.object({
-  kind: z.enum(["campaign", "creative", "insight", "competitor", "reference"]),
+  /**
+   * `attachment` is an image the user attached to this message (uploaded through
+   * `/assistant/attachments`). It is intentionally its own kind rather than a
+   * `reference`: an attachment is "a picture to talk about", while a reference
+   * is "a picture Layla must design from".
+   */
+  kind: z.enum(["campaign", "creative", "insight", "competitor", "reference", "attachment"]),
   id: IdSchema,
   label: z.string(),
 });
@@ -858,6 +879,8 @@ export const SendMessageInputSchema = z.object({
   promptType: z.enum(["image", "video"]).optional(),
   creativeMode: z.enum(["chat", "prompt", "design"]).optional(),
   referenceAnalysisId: IdSchema.nullable().optional(),
+  /** Images attached to this turn only (`POST /assistant/attachments`). */
+  attachmentIds: z.array(IdSchema).max(4).optional(),
   /** Set when replying to a question_with_options block. */
   answer: z.object({ messageId: IdSchema, optionIds: z.array(z.string()) }).optional(),
 });
@@ -1445,6 +1468,14 @@ export const UsageSchema = z.object({
   budgetSource: z.string().default("default"),
   byModel: z.array(UsageBreakdownSchema).default([]),
   byPersona: z.array(UsageBreakdownSchema).default([]),
+  /** Tokens per action (`chat.turn`, `research.analyze_website`, ...). */
+  byAction: z.array(UsageBreakdownSchema).default([]),
+  /** Calls billed from an estimate because the provider reported no usage. */
+  estimatedCalls: z.number().int().default(0),
+  /** Null unless the workspace configured a token price — never a guess. */
+  estimatedCostUsd: z.number().nullable().default(null),
+  costPerMillionInUsd: z.number().default(0),
+  costPerMillionOutUsd: z.number().default(0),
 });
 export type Usage = z.infer<typeof UsageSchema>;
 

@@ -328,7 +328,14 @@
         "label": "Design",
         "hint": "Layla actually generates the image. With a reference attached it is edited from that image, so the design matches the original and only your product changes."
       }
-    }
+    },
+    "attachImage": "Attach a photo (no analysis)",
+    "uploadingAttachment": "Uploading the photo…",
+    "attachmentReady": "Photo attached to this message. It goes with the reply you send now.",
+    "attachmentUploadFailed": "The photo could not be uploaded. Nothing was attached.",
+    "mentionTitle": "References, competitors and tools (@ Mention)",
+    "mentionCompetitorDesc": "A competitor saved in memory",
+    "mentionReferenceDesc": "An analyzed reference saved in the library"
   },
   "blocks": {
     "findings": "Findings",
@@ -1042,7 +1049,14 @@
     "breakdownKey": "Key",
     "breakdownTokens": "Tokens",
     "breakdownShare": "Share",
-    "percent": "{value}%"
+    "percent": "{value}%",
+    "byAction": "Tokens by action",
+    "estimatedCalls": "Estimated calls",
+    "estimatedCost": "Estimated cost",
+    "noCostConfigured": "No token price is configured for this workspace, so only token counts are shown.",
+    "estimatedNote": "Some calls were billed from an estimate because the provider reported no usage.",
+    "costNote": "Cost uses this workspace's configured price per million tokens.",
+    "notConfigured": "Not configured"
   },
   "audit": {
     "title": "Audit log",
@@ -1119,7 +1133,17 @@
         "desc": "90-day positioning, channels, phases and KPIs.",
         "placeholder": "Anything to emphasise? (optional)"
       }
-    }
+    },
+    "savedBadge": "Saved to Brand Memory & Brain",
+    "notSavedBadge": "Verification notice (not saved)",
+    "sourcesHeading": "Verified web sources & citations",
+    "availableToAgents": "Available to all AI agents",
+    "ignoredFromMemory": "Ignored from brain memory",
+    "historyTitle": "Saved brand intelligence",
+    "historyDesc": "Competitor profiles and market facts stored in permanent memory.",
+    "historyEmpty": "No research saved yet. Run an analysis on the left to populate the brain.",
+    "typoCorrected": "Auto-corrected “{from}” to “{to}” against market ground truth.",
+    "structureWarning": "This report is missing some expected sections: {sections}. The content was kept as written rather than invented."
   },
   "calendar": {
     "title": "Content calendar",

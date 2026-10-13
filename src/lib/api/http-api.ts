@@ -53,6 +53,7 @@ import {
   ContentItemSchema,
   GenerateContentCalendarInputSchema,
   UpdateContentItemInputSchema,
+  ChatAttachmentSchema,
   ConversationSchema,
   CreativeSchema,
   CreativeReferenceSchema,
@@ -82,6 +83,7 @@ import {
 import type {
   AnalyzeReferenceInput,
   ApplyRecommendationInput,
+  ChatAttachmentUpload,
   AssistantProgressEvent,
   AuditFilters,
   AuthSession,
@@ -1005,6 +1007,15 @@ export class HttpApi implements MarketingApi {
     return this.parse(CreativeReferenceSchema, mapCreativeReference(raw), `/creatives/references/${input.id}`);
   }
 
+  async uploadChatAttachment(input: ChatAttachmentUpload) {
+    const payload = await this.raw("/assistant/attachments", {
+      method: "POST",
+      body: JSON.stringify({ imageData: input.source, sourceName: input.fileName ?? "" }),
+      timeoutMs: REFERENCE_ANALYSIS_TIMEOUT_MS,
+    });
+    return this.parse(ChatAttachmentSchema, payload, "/assistant/attachments");
+  }
+
   async addToCampaign(): Promise<never> {
     throw unsupported("Attaching a creative to a campaign", "Generate the creative with a campaignId instead.");
   }
@@ -1091,8 +1102,15 @@ export class HttpApi implements MarketingApi {
   }
 
   private assistantPayload(input: SendMessageInput) {
-    const context: Record<string, string> = {};
+    // Values are mostly single ids; `attachmentIds` is the one list-valued key.
+    const context: Record<string, unknown> = {};
+    // Turn-scoped images ride along as a list, not as the single id the other
+    // kinds use: a message may carry several photos, and they must not become
+    // part of the conversation's sticky context.
+    const attachmentIds = [...input.context.filter((chip) => chip.kind === "attachment").map((chip) => chip.id)];
+    if (input.attachmentIds?.length) attachmentIds.push(...input.attachmentIds);
     for (const chip of input.context) {
+      if (chip.kind === "attachment") continue;
       const field =
         chip.kind === "campaign"
           ? "campaignId"
@@ -1114,6 +1132,10 @@ export class HttpApi implements MarketingApi {
     if (input.workflow) context.workflow = input.workflow;
     if (input.promptType) context.promptType = input.promptType;
     if (input.creativeMode) context.creativeMode = input.creativeMode;
+    // `Array.from` (not spread) so the file keeps compiling against the project's
+    // configured target, which does not enable downlevel iteration.
+    const uniqueAttachments = Array.from(new Set(attachmentIds)).slice(0, 4);
+    if (uniqueAttachments.length) context.attachmentIds = uniqueAttachments;
     return {
       conversationId: input.conversationId ?? undefined,
       message: input.text,

@@ -68,9 +68,11 @@ interface ResearchItem {
 interface ToolConfig {
   key: ToolKey;
   icon: LucideIcon;
-  title: string;
-  desc: string;
-  placeholder?: string;
+  /**
+   * Titles, descriptions and placeholders are resolved from the message
+   * catalogue at render time (``research.tools.<key>.*``) so both locales stay in
+   * sync with the backend's tool keys.
+   */
   field: string | null;
   required: boolean;
   type?: "url" | "text";
@@ -80,9 +82,6 @@ const TOOLS: ToolConfig[] = [
   { 
     key: "analyze_website", 
     icon: Globe, 
-    title: "Website analyzer",
-    desc: "Positioning, offers, trust signals and gaps of any site.",
-    placeholder: "https://yourbrand.com",
     field: "url", 
     required: true, 
     type: "url" 
@@ -90,72 +89,48 @@ const TOOLS: ToolConfig[] = [
   { 
     key: "analyze_competitor", 
     icon: Crosshair, 
-    title: "Competitor research",
-    desc: "Who's advertising to your audience and how.",
-    placeholder: "Competitor name or category (optional)",
     field: "competitor", 
     required: false 
   },
   { 
     key: "analyze_social_profile", 
     icon: AtSign, 
-    title: "Social profile",
-    desc: "Content pillars, engagement and what to post more of.",
-    placeholder: "@handle",
     field: "handle", 
     required: true 
   },
   { 
     key: "analyze_reviews", 
     icon: Star, 
-    title: "Reviews",
-    desc: "Themes, quotes and sentiment from customer reviews.",
-    placeholder: "Google Maps / store URL (optional)",
     field: "url", 
     required: false 
   },
   { 
     key: "analyze_market", 
     icon: Compass, 
-    title: "Market analysis",
-    desc: "Size, segments and trends for your category.",
-    placeholder: "Category or question (optional)",
     field: "category", 
     required: false 
   },
   { 
     key: "analyze_keywords", 
     icon: KeyRound, 
-    title: "Keywords",
-    desc: "Search demand clusters, intent and difficulty.",
-    placeholder: "Seed keyword, e.g. cold brew cairo",
     field: "seed", 
     required: true 
   },
   { 
     key: "analyze_competitor_creatives", 
     icon: Images, 
-    title: "Competitor ads",
-    desc: "Long-running competitor creatives and their hooks.",
-    placeholder: "Competitor name (optional)",
     field: "competitor", 
     required: false 
   },
   { 
     key: "detect_market_gaps", 
     icon: Sparkles, 
-    title: "Market gaps",
-    desc: "Unserved needs ranked by opportunity, from all research so far.",
-    placeholder: undefined,
     field: null, 
     required: false 
   },
   { 
     key: "generate_marketing_strategy", 
     icon: BrainCircuit, 
-    title: "Marketing strategy",
-    desc: "90-day positioning, channels, phases and KPIs.",
-    placeholder: "Anything to emphasise? (optional)",
     field: "notes", 
     required: false 
   },
@@ -436,12 +411,12 @@ export function ResearchView() {
                     {activeResearch.saved_to_memory !== false ? (
                       <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[11px] gap-1">
                         <CheckCircle2 className="h-3 w-3" />
-                        Saved to Brand Memory & Brain
+                        {t("savedBadge")}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[11px] gap-1">
                         <AlertTriangle className="h-3 w-3" />
-                        Verification Notice (Not Saved)
+                        {t("notSavedBadge")}
                       </Badge>
                     )}
                     <CardTitle className="text-base font-semibold leading-tight pt-1">
@@ -465,10 +440,31 @@ export function ResearchView() {
                   <div className="rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
                     <Sparkles className="h-4 w-4 shrink-0 text-amber-500" />
                     <span>
-                      Auto-corrected typo from <strong>&ldquo;{String(activeResearch.details.corrected_from)}&rdquo;</strong> to <strong>&ldquo;{activeResearch.details.subject ? String(activeResearch.details.subject) : activeResearch.query}&rdquo;</strong> based on market ground truth.
+                      {t("typoCorrected", {
+                        from: String(activeResearch.details.corrected_from),
+                        to: activeResearch.details.subject ? String(activeResearch.details.subject) : activeResearch.query,
+                      })}
                     </span>
                   </div>
                 )}
+
+                {/* Structure notice: the backend reports sections it could not
+                    enforce, so an incomplete report is visible instead of silently
+                    looking like the previous, differently-shaped one. */}
+                {Array.isArray(activeResearch.details?.structure_warnings) &&
+                  (activeResearch.details.structure_warnings as string[]).length > 0 && (
+                    <div
+                      role="status"
+                      className="rounded-md bg-sky-500/10 border border-sky-500/20 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 flex items-start gap-2"
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-sky-500" />
+                      <span>
+                        {t("structureWarning", {
+                          sections: (activeResearch.details.structure_warnings as string[]).join("، "),
+                        })}
+                      </span>
+                    </div>
+                  )}
 
                 {/* Structured Markdown Report */}
                 <div className="rounded-lg bg-muted/40 p-4 text-xs max-h-[500px] overflow-y-auto border">
@@ -480,7 +476,7 @@ export function ResearchView() {
                   <div className="rounded-lg border bg-background/80 p-3 space-y-2">
                     <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
                       <Globe2 className="h-3.5 w-3.5 text-primary" />
-                      Verified Web Sources & Citations ({(activeResearch.details.sources as SourceItem[]).length}):
+                      {t("sourcesHeading")} ({(activeResearch.details.sources as SourceItem[]).length}):
                     </span>
                     <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
                       {(activeResearch.details.sources as SourceItem[]).map((s, idx) => (
@@ -502,7 +498,7 @@ export function ResearchView() {
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t">
                   <span className="flex items-center gap-1 font-medium text-primary">
                     <BrainCircuit className="h-3.5 w-3.5" />
-                    {activeResearch.saved_to_memory !== false ? "Available to all AI Agents" : "Ignored from Brain Memory"}
+                    {activeResearch.saved_to_memory !== false ? t("availableToAgents") : t("ignoredFromMemory")}
                   </span>
                   <span>{activeResearch.created_at ? new Date(activeResearch.created_at).toLocaleTimeString() : ""}</span>
                 </div>
@@ -516,20 +512,20 @@ export function ResearchView() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-primary" />
-                  Saved Brand Intelligence
+                  {t("historyTitle")}
                 </CardTitle>
                 <Badge variant="secondary" className="text-xs">
                   {recentItems.length}
                 </Badge>
               </div>
               <CardDescription className="text-xs">
-                Competitor profiles and market facts stored in permanent memory.
+                {t("historyDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {recentItems.length === 0 ? (
                 <div className="text-center py-6 text-xs text-muted-foreground">
-                  No research saved yet. Run a competitor or website search on the left to populate the brain.
+                  {t("historyEmpty")}
                 </div>
               ) : (
                 <ul className="divide-y max-h-[420px] overflow-y-auto">
@@ -573,8 +569,15 @@ function ToolCard({
   isAnyBusy: boolean;
   onRun: (value: string) => void;
 }) {
+  const t = useTranslations("research");
   const [value, setValue] = useState("");
   const disabled = isAnyBusy || (tool.required && !value.trim());
+  // The labels live in the message catalogue (messages/{en,ar}.json) keyed by the
+  // same tool key the backend expects. They used to be hard-coded English, so an
+  // Arabic workspace still saw "Website analyzer" and typed English placeholders.
+  const title = t(`tools.${tool.key}.title`);
+  const description = t(`tools.${tool.key}.desc`);
+  const placeholder = t.has(`tools.${tool.key}.placeholder`) ? t(`tools.${tool.key}.placeholder`) : undefined;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -589,9 +592,9 @@ function ToolCard({
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0">
             <tool.icon className="h-4 w-4" />
           </span>
-          <CardTitle className="text-sm truncate">{tool.title}</CardTitle>
+          <CardTitle className="text-sm truncate">{title}</CardTitle>
         </div>
-        <p className="text-xs text-muted-foreground">{tool.desc}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
       </CardHeader>
       <CardContent className="mt-auto">
         <form onSubmit={submit} className="flex gap-2">
@@ -600,8 +603,8 @@ function ToolCard({
               type={tool.type ?? "text"}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={tool.placeholder}
-              aria-label={tool.title}
+              placeholder={placeholder ?? undefined}
+              aria-label={title}
               className="h-9 text-xs"
               dir="auto"
               disabled={isPending}
@@ -618,7 +621,7 @@ function ToolCard({
             ) : (
               <ArrowRight className="h-4 w-4 rtl:rotate-180" />
             )}
-            <span className="ms-1.5">تشغيل</span>
+            <span className="ms-1.5">{t("run")}</span>
           </Button>
         </form>
       </CardContent>

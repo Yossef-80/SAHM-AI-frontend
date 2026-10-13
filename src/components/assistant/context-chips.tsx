@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { Megaphone, Plus, X, Image as ImageIcon, Lightbulb, Crosshair } from "lucide-react";
+import { Megaphone, Plus, X, Image as ImageIcon, ImagePlus, Lightbulb, Crosshair } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -10,7 +10,16 @@ import { useAssistantStore } from "@/store/assistant-store";
 import { useCampaigns, useCreativeReferences, useCreatives, useMemoryItems } from "@/hooks/use-api";
 import type { ContextChip } from "@/types";
 
-const icon = { campaign: Megaphone, creative: ImageIcon, insight: Lightbulb, competitor: Crosshair, reference: ImageIcon };
+const icon = {
+  campaign: Megaphone,
+  creative: ImageIcon,
+  insight: Lightbulb,
+  competitor: Crosshair,
+  reference: ImageIcon,
+  // An attached photo is "a picture to talk about" — same glyph as a creative,
+  // different lifecycle (turn-scoped, never sticky context).
+  attachment: ImagePlus,
+};
 
 export function ContextChips() {
   const t = useTranslations("assistant");

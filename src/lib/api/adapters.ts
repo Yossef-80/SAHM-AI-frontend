@@ -1123,6 +1123,13 @@ export function mapUsage(raw: Json): Usage {
     budgetSource: str(raw.budgetSource, "default"),
     byModel: asArray(raw.byModel).map(mapUsageBreakdown),
     byPersona: asArray(raw.byPersona).map(mapUsageBreakdown),
+    byAction: asArray(raw.byAction).map(mapUsageBreakdown),
+    estimatedCalls: num(raw.estimatedCalls, 0),
+    // Null (not 0) until a price is configured: an unpriced workspace must show
+    // tokens only rather than a made-up currency figure.
+    estimatedCostUsd: typeof raw.estimatedCostUsd === "number" ? raw.estimatedCostUsd : null,
+    costPerMillionInUsd: num(raw.costPerMillionInUsd, 0),
+    costPerMillionOutUsd: num(raw.costPerMillionOutUsd, 0),
   };
 }
 

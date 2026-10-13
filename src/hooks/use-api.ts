@@ -143,6 +143,19 @@ export const useUpdateCreativeReference = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.creativeReferences }),
   });
 };
+/**
+ * Uploads an image for the next chat message.
+ *
+ * Separate from `useAnalyzeReference` on purpose: attaching a picture to a chat
+ * must not run the vision analysis, change the composer mode, or navigate. The
+ * returned id is added as a turn-scoped `attachment` chip.
+ */
+export const useUploadChatAttachment = () =>
+  useMutation({
+    mutationFn: (input: { source: string; fileName?: string; mime?: string }) =>
+      api.uploadChatAttachment(input),
+  });
+
 export const useAnalyzeReference = () => {
   const qc = useQueryClient();
   return useMutation({
