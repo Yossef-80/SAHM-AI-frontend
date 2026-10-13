@@ -41,6 +41,8 @@ import type {
   Campaign,
   CampaignDraft,
   GeneratedCampaignStrategy,
+  MetaAdPlanAssistInput,
+  MetaAdPlanAssistResponse,
   Conversation,
   Creative,
   CreativeReference,
@@ -110,6 +112,8 @@ export interface MarketingApi {
   createCampaign(draft: CampaignDraft): Promise<Campaign>;
   /** Save local draft + pending Meta plan; no Meta writes occur. */
   prepareMetaAdPlan(draft: CampaignDraft, plan: MetaAdPlanSettings): Promise<MetaAdPlanCreated>;
+  /** Read-only LLM + Meta MCP assistance; returns an editable draft, never writes. */
+  assistMetaAdPlan(input: MetaAdPlanAssistInput): Promise<MetaAdPlanAssistResponse>;
   /** Approval phase 1: persist the diff only. */
   previewMetaAdPlan(recommendationId: string): Promise<MetaAdPlanApprovalResponse>;
   /** Approval phase 2: create the reviewed hierarchy, all PAUSED. */

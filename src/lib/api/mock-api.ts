@@ -34,6 +34,8 @@ import type {
   Message,
   MetaConnection,
   MetaAdPlanSettings,
+  MetaAdPlanAssistInput,
+  MetaAdPlanAssistResponse,
   MetaAdPlanCreated,
   MetaAdPlanActivationResponse,
   MetaAdPlanApprovalResponse,
@@ -711,6 +713,37 @@ export class MockApi implements MarketingApi {
       title,
       status: "pending",
       message: "Mock mode: plan saved locally; no Meta request was made.",
+    };
+  }
+  async assistMetaAdPlan(input: MetaAdPlanAssistInput): Promise<MetaAdPlanAssistResponse> {
+    await simulate({ safe: true });
+    return {
+      primaryText: input.primaryText?.trim()
+        ? null
+        : input.strategy.keyMessages[0] ?? input.strategy.summary ?? null,
+      headline: input.headline?.trim()
+        ? null
+        : input.strategy.ctaDirection ?? input.strategy.keyMessages[0] ?? null,
+      callToActionType: null,
+      billingEvent: null,
+      optimizationGoal: null,
+      destinationType: null,
+      specialAdCategories: null,
+      bidStrategy: "LOWEST_COST_WITHOUT_CAP",
+      allowedValues: {},
+      fieldValidation: {
+        billingEvent: "unchecked",
+        optimizationGoal: "unchecked",
+        destinationType: "unchecked",
+        callToActionType: "unchecked",
+        specialAdCategories: "unchecked",
+        bidStrategy: "unchecked",
+      },
+      assumptions: ["Mock mode does not call Meta Ads MCP; review all values manually."],
+      missingInputs: [],
+      mcpContextAvailable: false,
+      reviewRequired: true,
+      writesToMeta: false,
     };
   }
   async previewMetaAdPlan(recommendationId: string): Promise<MetaAdPlanApprovalResponse> {

@@ -8,6 +8,7 @@ import type {
   AuditFilters,
   BusinessProfileUpdateInput,
   CampaignDraft,
+  MetaAdPlanAssistInput,
   MetaAdPlanSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
@@ -61,6 +62,8 @@ export const usePrepareMetaAdPlan = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
   });
 };
+export const useAssistMetaAdPlan = () =>
+  useMutation({ mutationFn: (input: MetaAdPlanAssistInput) => api.assistMetaAdPlan(input) });
 export const useActivateMetaAdPlan = () => {
   const qc = useQueryClient();
   return useMutation({

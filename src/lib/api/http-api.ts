@@ -66,6 +66,8 @@ import {
   MetaConnectionSchema,
   MetaTargetingSearchSchema,
   MetaAdPlanCreatedSchema,
+  MetaAdPlanAssistInputSchema,
+  MetaAdPlanAssistResponseSchema,
   MetaAdPlanApprovalResponseSchema,
   MetaAdInsightsResponseSchema,
   MetaAdPlanActivationResponseSchema,
@@ -93,6 +95,8 @@ import type {
   GenerateStrategyInput,
   GenerateTextInput,
   GeneratedCampaignStrategy,
+  MetaAdPlanAssistInput,
+  MetaAdPlanAssistResponse,
   GeneratedText,
   ListCampaignsInput,
   ListContentInput,
@@ -727,6 +731,16 @@ export class HttpApi implements MarketingApi {
       plan,
     });
     return this.parse(MetaAdPlanCreatedSchema, raw, "/campaigns/meta-ad-plan");
+  }
+
+  async assistMetaAdPlan(input: MetaAdPlanAssistInput): Promise<MetaAdPlanAssistResponse> {
+    const payload = MetaAdPlanAssistInputSchema.parse(input);
+    const raw = await this.raw("/campaigns/meta-ad-plan/assist", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      timeoutMs: ASSISTANT_TIMEOUT_MS,
+    });
+    return this.parse(MetaAdPlanAssistResponseSchema, raw, "/campaigns/meta-ad-plan/assist");
   }
 
   async previewMetaAdPlan(recommendationId: string) {

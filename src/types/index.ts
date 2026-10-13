@@ -232,6 +232,52 @@ export const MetaAdPlanSettingsSchema = z.object({
 });
 export type MetaAdPlanSettings = z.infer<typeof MetaAdPlanSettingsSchema>;
 
+export const MetaAdPlanAssistInputSchema = z.object({
+  campaignName: z.string().min(2).max(200),
+  objective: CampaignObjectiveSchema,
+  dailyBudget: z.number().positive(),
+  currency: z.string().length(3),
+  brief: z.string().max(4000).optional(),
+  language: z.enum(["ar", "en"]),
+  strategy: GeneratedCampaignStrategySchema,
+  audience: z.object({
+    name: z.string().max(200),
+    ageMin: z.number().int().min(13).max(65),
+    ageMax: z.number().int().min(13).max(65),
+    gender: z.enum(["all", "male", "female"]),
+    countries: z.array(z.string()).max(12),
+    interests: z.array(z.string()).max(20),
+  }),
+  destinationUrl: z.string().max(2000).optional(),
+  primaryText: z.string().max(3000).optional(),
+  headline: z.string().max(255).optional(),
+  callToActionType: z.string().max(80).optional(),
+  billingEvent: z.string().max(80).optional(),
+  optimizationGoal: z.string().max(80).optional(),
+  destinationType: z.string().max(80).optional(),
+  specialAdCategories: z.array(z.string()).max(5).default([]),
+});
+export type MetaAdPlanAssistInput = z.infer<typeof MetaAdPlanAssistInputSchema>;
+
+export const MetaAdPlanAssistResponseSchema = z.object({
+  primaryText: z.string().nullable(),
+  headline: z.string().nullable(),
+  callToActionType: z.string().nullable(),
+  billingEvent: z.string().nullable(),
+  optimizationGoal: z.string().nullable(),
+  destinationType: z.string().nullable(),
+  specialAdCategories: z.array(z.string()).nullable(),
+  bidStrategy: z.literal("LOWEST_COST_WITHOUT_CAP"),
+  allowedValues: z.record(z.string(), z.array(z.string())).default({}),
+  fieldValidation: z.record(z.string(), z.enum(["valid", "invalid", "unchecked"])).default({}),
+  assumptions: z.array(z.string()).default([]),
+  missingInputs: z.array(z.string()).default([]),
+  mcpContextAvailable: z.boolean(),
+  reviewRequired: z.boolean(),
+  writesToMeta: z.boolean(),
+});
+export type MetaAdPlanAssistResponse = z.infer<typeof MetaAdPlanAssistResponseSchema>;
+
 export const MetaAdPlanCreatedSchema = z.object({
   campaignId: IdSchema,
   recommendationId: IdSchema,

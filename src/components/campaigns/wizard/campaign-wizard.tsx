@@ -18,6 +18,7 @@ import {
   useUploadCreative,
   useGenerateStrategy,
   useMetaConnection,
+  useAssistMetaAdPlan,
   usePrepareMetaAdPlan,
   useMetaInterestSearch,
   usePreviewMetaAdPlan,
@@ -34,6 +35,7 @@ import {
   type GeneratedCampaignStrategy,
   type MetaAdPlanActivationResponse,
   type MetaAdPlanApprovalResponse,
+  type MetaAdPlanAssistResponse,
   type MetaAdPlanSettings,
 } from "@/types";
 import { GeneratedStrategyView } from "../detail/generated-strategy-view";
@@ -65,6 +67,11 @@ type WizardState = {
   destinationUrl: string;
   primaryText: string;
   headline: string;
+  callToActionType: string;
+  billingEvent: string | null;
+  optimizationGoal: string | null;
+  destinationType: string | null;
+  specialAdCategories: string[];
   instagramActorId: string;
   /** ISO country codes for Meta `geo_locations`. Chosen, never inferred. */
   countries: string[];
@@ -131,17 +138,28 @@ const COUNTRY_OPTIONS: Array<{ code: string; ar: string; en: string }> = [
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function isSafeMetaPlanRetry(result: MetaAdPlanApprovalResponse | null): boolean {
-  if (!result || result.executed) return false;
+function getMetaPlanRecoveryAction(
+  result: MetaAdPlanApprovalResponse | null,
+): "retry" | "resume" | null {
+  if (!result || result.executed) return null;
   const execution = result.recommendation.executionResult;
-  if (execution?.status !== "failed_safe" || execution.retry_safe !== true) return false;
+  if (!execution || execution.retry_safe !== true) return null;
   const createdIds = execution.created_ids;
-  return (
-    typeof createdIds === "object" &&
-    createdIds !== null &&
-    !Array.isArray(createdIds) &&
-    Object.keys(createdIds as Record<string, unknown>).length === 0
-  );
+  if (typeof createdIds !== "object" || createdIds === null || Array.isArray(createdIds)) return null;
+  const ids = createdIds as Record<string, unknown>;
+
+  if (execution.status === "failed_safe" && Object.keys(ids).length === 0) return "retry";
+  if (
+    execution.status === "partial" &&
+    execution.failure_status_code === 400 &&
+    (execution.attempted_step === "campaign_bid_strategy" || execution.attempted_step === "ad_set") &&
+    Object.keys(ids).length === 1 &&
+    typeof ids.campaign === "string" &&
+    ids.campaign.length > 0
+  ) {
+    return "resume";
+  }
+  return null;
 }
 
 export function CampaignWizard() {
@@ -153,6 +171,7 @@ export function CampaignWizard() {
   const setPrefill = useUiStore((s) => s.setCampaignPrefill);
   const { dispatch, isPending } = useAction();
   const genStrategy = useGenerateStrategy();
+  const assistMetaPlan = useAssistMetaAdPlan();
   const prepareMetaPlan = usePrepareMetaAdPlan();
   const previewMetaPlan = usePreviewMetaAdPlan();
   const confirmMetaPlan = useConfirmMetaAdPlan();
@@ -208,6 +227,11 @@ export function CampaignWizard() {
     destinationUrl: "",
     primaryText: "",
     headline: "",
+    callToActionType: "",
+    billingEvent: null,
+    optimizationGoal: null,
+    destinationType: null,
+    specialAdCategories: [],
     instagramActorId: "",
     countries: [],
   });
@@ -218,9 +242,15 @@ export function CampaignWizard() {
   // Activation is a separate two-phase step: preview first, then spend.
   const [activation, setActivation] = useState<MetaAdPlanActivationResponse | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [assistResult, setAssistResult] = useState<MetaAdPlanAssistResponse | null>(null);
+  const [assistError, setAssistError] = useState<string | null>(null);
   useEffect(() => () => setPrefill(null), [setPrefill]);
 
-  const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => setState((s) => ({ ...s, [k]: v }));
+  const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => {
+    setAssistResult(null);
+    setAssistError(null);
+    setState((s) => ({ ...s, [k]: v }));
+  };
   const idx = STEPS.indexOf(step);
 
   const errors = useMemo(() => {
@@ -303,19 +333,19 @@ export function CampaignWizard() {
           }
         : {}),
     },
-    billingEvent: derived.billingEvent,
-    optimizationGoal: derived.optimizationGoal,
-    // An empty list is explicit: most advertisers are not in a special category,
-    // and omitting it makes Meta reject the request.
-    specialAdCategories: [],
-    destinationType: derived.destinationType,
+    billingEvent: state.billingEvent ?? derived.billingEvent,
+    optimizationGoal: state.optimizationGoal ?? derived.optimizationGoal,
+    // Keep the current explicit no-special-category state unless MCP returns an
+    // exact, validated value from a brief that states one.
+    specialAdCategories: [...state.specialAdCategories],
+    destinationType: state.destinationType ?? derived.destinationType,
     // Left unset: needs a Meta Pixel / app object the workspace owner configures.
     promotedObject: undefined,
     destinationUrl: state.destinationUrl.trim() || undefined,
     primaryText: state.primaryText.trim() || undefined,
     headline: state.headline.trim() || undefined,
     callToAction: {
-      type: "LEARN_MORE",
+      type: state.callToActionType || "LEARN_MORE",
       value: { link: state.destinationUrl.trim(), link_caption: state.headline.trim() },
     },
     instagramActorId: state.instagramActorId.trim() || undefined,
@@ -346,7 +376,7 @@ export function CampaignWizard() {
     }
   };
   const reviewSafeMetaRetry = async () => {
-    if (!preparedPlan || !isSafeMetaPlanRetry(planExecution)) return;
+    if (!preparedPlan || !getMetaPlanRecoveryAction(planExecution)) return;
     setPlanError(null);
     try {
       const result = await previewMetaPlan.mutateAsync(preparedPlan.recommendationId);
@@ -381,6 +411,7 @@ export function CampaignWizard() {
     }
   };
   const canNext = !errors[step];
+  const recoveryAction = getMetaPlanRecoveryAction(planExecution);
   const next = () => setStep(STEPS[Math.min(idx + 1, STEPS.length - 1)]);
   const back = () => setStep(STEPS[Math.max(idx - 1, 0)]);
 
@@ -407,6 +438,68 @@ export function CampaignWizard() {
     );
 
   const metaConnected = meta.data?.campaignReady === true;
+
+  const requestMetaAssist = async () => {
+    if (!state.strategy || !state.objective) return;
+    const derived = META_OBJECTIVE_DEFAULTS[state.objective] ?? META_OBJECTIVE_DEFAULTS.traffic;
+    setAssistError(null);
+    setAssistResult(null);
+    try {
+      const result = await assistMetaPlan.mutateAsync({
+        campaignName: state.name,
+        objective: state.objective,
+        dailyBudget: state.dailyBudget,
+        currency: state.currency,
+        brief: state.brief || undefined,
+        language: locale === "ar" ? "ar" : "en",
+        strategy: state.strategy,
+        audience: {
+          name: state.audienceName,
+          ageMin: state.ageMin,
+          ageMax: state.ageMax,
+          gender: state.gender,
+          countries: [...state.countries],
+          interests: state.interests.map((interest) => interest.name),
+        },
+        destinationUrl: state.destinationUrl || undefined,
+        primaryText: state.primaryText,
+        headline: state.headline,
+        callToActionType: state.callToActionType || undefined,
+        billingEvent: state.billingEvent ?? derived.billingEvent,
+        optimizationGoal: state.optimizationGoal ?? derived.optimizationGoal,
+        destinationType: state.destinationType ?? derived.destinationType,
+        specialAdCategories: [...state.specialAdCategories],
+      });
+      setState((current) => ({
+        ...current,
+        primaryText: current.primaryText.trim() ? current.primaryText : result.primaryText ?? current.primaryText,
+        headline: current.headline.trim() ? current.headline : result.headline ?? current.headline,
+        callToActionType:
+          result.fieldValidation.callToActionType === "valid" && result.callToActionType
+            ? result.callToActionType
+            : current.callToActionType,
+        billingEvent:
+          result.fieldValidation.billingEvent === "valid" && result.billingEvent
+            ? result.billingEvent
+            : current.billingEvent,
+        optimizationGoal:
+          result.fieldValidation.optimizationGoal === "valid" && result.optimizationGoal
+            ? result.optimizationGoal
+            : current.optimizationGoal,
+        destinationType:
+          result.fieldValidation.destinationType === "valid" && result.destinationType
+            ? result.destinationType
+            : current.destinationType,
+        specialAdCategories:
+          result.fieldValidation.specialAdCategories === "valid" && result.specialAdCategories
+            ? result.specialAdCategories
+            : current.specialAdCategories,
+      }));
+      setAssistResult(result);
+    } catch (error) {
+      setAssistError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -707,6 +800,50 @@ export function CampaignWizard() {
                       )}
                     </div>
                   )}
+                  <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{t("launch.assistTitle")}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{t("launch.assistHint")}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!state.strategy || !metaConnected || assistMetaPlan.isPending || !!errors.goal || !!errors.audience}
+                        onClick={requestMetaAssist}
+                      >
+                        {assistMetaPlan.isPending ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : <Sparkles className="me-2 h-4 w-4" />}
+                        {assistMetaPlan.isPending ? t("launch.assistPending") : t("launch.assistButton")}
+                      </Button>
+                    </div>
+                    {!state.strategy && <p className="mt-2 text-xs text-muted-foreground">{t("launch.assistNeedsStrategy")}</p>}
+                    {!metaConnected && <p className="mt-2 text-xs text-muted-foreground">{t("launch.assistNeedsConnection")}</p>}
+                    {assistError && <p role="alert" className="mt-2 text-sm text-destructive">{assistError}</p>}
+                    {assistResult && (
+                      <div className="mt-3 space-y-2 border-t border-primary/10 pt-3 text-xs">
+                        <p className="font-medium">
+                          {assistResult.mcpContextAvailable ? t("launch.assistContextReady") : t("launch.assistContextUnavailable")}
+                        </p>
+                        <p className="text-muted-foreground">{t("launch.assistDraftOnly")}</p>
+                        {assistResult.assumptions.length > 0 && (
+                          <div>
+                            <p className="font-medium">{t("launch.assistAssumptions")}</p>
+                            <ul className="mt-1 list-inside list-disc text-muted-foreground">
+                              {assistResult.assumptions.map((item, index) => <li key={`assumption-${index}`}>{item}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {assistResult.missingInputs.length > 0 && (
+                          <div>
+                            <p className="font-medium">{t("launch.assistMissing")}</p>
+                            <ul className="mt-1 list-inside list-disc text-muted-foreground">
+                              {assistResult.missingInputs.map((item, index) => <li key={`missing-${index}`}>{item}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <PlanField label={t("launch.fields.destinationUrl")}>
                       <Input type="url" value={state.destinationUrl} onChange={(e) => set("destinationUrl", e.target.value)} placeholder="https://" />
@@ -815,7 +952,13 @@ export function CampaignWizard() {
                       {planPreview.requiresConfirmation && (!planExecution || retryReview) && (
                         <Button disabled={confirmMetaPlan.isPending || previewMetaPlan.isPending || !metaConnected} onClick={executeApprovedPlan}>
                           {confirmMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                          {t(retryReview ? "launch.confirmRetry" : "launch.confirmPaused")}
+                          {t(
+                            retryReview
+                              ? recoveryAction === "resume"
+                                ? "launch.confirmResume"
+                                : "launch.confirmRetry"
+                              : "launch.confirmPaused",
+                          )}
                         </Button>
                       )}
                       {planExecution && (
@@ -824,9 +967,11 @@ export function CampaignWizard() {
                           {planExecution.recommendation.executionResult && (
                             <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs" dir="ltr">{JSON.stringify(planExecution.recommendation.executionResult, null, 2)}</pre>
                           )}
-                          {isSafeMetaPlanRetry(planExecution) && !retryReview && (
+                          {recoveryAction && !retryReview && (
                             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                              <p className="text-xs text-muted-foreground">{t("launch.retrySafeHint")}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {t(recoveryAction === "resume" ? "launch.resumeSafeHint" : "launch.retrySafeHint")}
+                              </p>
                               <Button
                                 type="button"
                                 variant="outline"
@@ -835,7 +980,7 @@ export function CampaignWizard() {
                                 onClick={reviewSafeMetaRetry}
                               >
                                 {previewMetaPlan.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                                {t("launch.retryMetaCreation")}
+                                {t(recoveryAction === "resume" ? "launch.resumeMetaCreation" : "launch.retryMetaCreation")}
                               </Button>
                             </div>
                           )}
