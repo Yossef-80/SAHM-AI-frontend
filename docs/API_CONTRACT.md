@@ -46,7 +46,7 @@ All schemas below are the *authoritative names* in `src/types/index.ts` — read
 | `getCampaign(id)` | `GET /campaigns/:id` | — | `Campaign` |
 | `createCampaign(draft)` | `POST /campaigns` | `CampaignDraft` | `Campaign` |
 | `updateCampaign({ id, patch })` | `PATCH /campaigns/:id` | body = `UpdateCampaignInput.patch` `{ name?, status?, dailyBudget?, endDate? }` | `Campaign` |
-| `generateStrategy(input)` | `POST /campaigns/strategy` | `GenerateStrategyInput` `{ objective, audience (partial, no id), dailyBudget, brief? }` | `CampaignStrategy` |
+| `generateStrategy(input)` | `POST /campaigns/strategy` | `GenerateStrategyInput` `{ campaignName?, objective, audience (partial, no id), dailyBudget, currency?, brief?, language? }` | `GeneratedCampaignStrategy` (Omar draft; no Meta write) |
 | `getCampaignPerformance(id)` | `GET /campaigns/:id/performance` | — | `MetricPoint[]` (daily, oldest → newest) |
 | `getCampaignRecommendations(id)` | `GET /campaigns/:id/recommendations` | — | `Recommendation[]` |
 | `getCampaignLearnings(id)` | `GET /campaigns/:id/learnings` | — | `Learning[]` |
@@ -87,6 +87,8 @@ All schemas below are the *authoritative names* in `src/types/index.ts` — read
 `CampaignMetrics`: `{ impressions, reach, clicks, ctr (%), cpc, cpm, conversions, cpa, roas, spend }` — all numbers, currency values in campaign currency.
 
 `CampaignStrategy`: `{ summary, keyMessages[], channels[]: "facebook"|"instagram"|"messenger"|"audience_network", placements[], biddingStrategy: "lowest_cost"|"cost_cap"|"bid_cap"|"roas_goal", phases[]: { name, durationDays, focus }, kpis[]: { metric, target } }`
+
+`GeneratedCampaignStrategy` is the wizard's AI draft: `{ summary, objective?, audience?, positioning?, keyMessages[], channels[]: { channel, role, budgetSharePct?, placements[], rationale }, placements[], creativeDirection?, ctaDirection?, creativesNeeded[], successMetrics[], evidence[], assumptions[], missingInputs[] }`. It is not stored as an executed campaign and does not call Meta.
 
 `MetricPoint`: `{ date: "YYYY-MM-DD", impressions, clicks, conversions, spend }`
 
@@ -257,21 +259,23 @@ ChangeDiff = { field: string, label: string, before: string|number|boolean|null,
 | Method | HTTP | Input | Output |
 |---|---|---|---|
 | `listContentItems(input)` | `GET /content?month=YYYY-MM&campaignId=` | `ListContentInput` | `ContentItem[]` (month-scoped) |
-| `generateContentCalendar(input)` | `POST /content/generate` | `GenerateContentCalendarInput` | `ContentItem[]` — **replaces** that month's items for the given campaign scope |
+| `generateContentCalendar(input)` | `POST /content/generate` | `GenerateContentCalendarInput` | `ContentItem[]` — saves the draft; replaces only `idea` items for that month/campaign and preserves `draft`, `scheduled`, and `published` items |
 | `updateContentItem(input)` | `PATCH /content/:id` | `UpdateContentItemInput` `{ id, patch }` | `ContentItem` |
-| `deleteContentItem(id)` | `DELETE /content/:id` | — | `void` |
+| `deleteContentItem(id)` | `DELETE /content/:id` | — | `{ id }` |
 
 ### `ContentItem`
 ```ts
 {
-  id, date: "YYYY-MM-DD", time?: "HH:mm",
+  id, date: "YYYY-MM-DD", time?: "HH:mm"|null,
   channel: "instagram"|"facebook"|"tiktok"|"email"|"blog",
   format: "post"|"reel"|"story"|"ad"|"email"|"article",
-  title, hook?, caption?, hashtags: string[],
+  title, hook?: string|null, caption?: string|null, hashtags: string[],
   status: "idea"|"draft"|"scheduled"|"published",
-  campaignId: Id|null, creativeId: Id|null, pillar?, createdAt, updatedAt
+  campaignId: Id|null, creativeId: Id|null, pillar?: string|null, createdAt, updatedAt
 }
 ```
+Generation is a standalone Omar workflow: it does not require a saved campaign strategy, calls no external publishing integrations, and saves only editable `idea` entries. The response contains the newly generated items; the month query returns those plus any preserved drafts, scheduled items, or published entries.
+
 ### `GenerateContentCalendarInput`
 `{ month: "YYYY-MM", campaignId: Id|null = null, postsPerWeek: 1–14 = 4, channels: ContentChannel[] = ["instagram","facebook"], brief? }`
 
@@ -279,9 +283,9 @@ ChangeDiff = { field: string, label: string, before: string|number|boolean|null,
 
 | Method | HTTP | Input | Output |
 |---|---|---|---|
-| `generateText(input)` | `POST /generate/text` | `GenerateTextInput` | `GeneratedText` |
+| `generateText(input)` | `POST /creatives/generate-text` | `GenerateTextInput` | Layla output `{ id, tool, output, createdAt }`, mapped to `GeneratedText` by the client |
 
-`GenerateTextInput`: `{ tool: "generate_creative_brief"|"generate_commercial_script"|"generate_image_prompt"|"generate_video_prompt"|"generate_ad_copy", brief (min 3), campaignId?, creativeId?, language: "en"|"ar" = "en" }`
+`GenerateTextInput`: `{ tool: "generate_creative_brief"|"generate_commercial_script"|"generate_image_prompt"|"generate_video_prompt"|"generate_ad_copy"|"generate_ad_variations", brief (min 3), campaignId?, creativeId?, language: "en"|"ar" = "en" }`. The route invokes the `app.ai` Layla provider directly rather than queuing a legacy `/tasks` run.
 `GeneratedText`: `{ id, tool, title, sections: { heading, body }[], plainText, createdAt }` — `plainText` is what "Copy" and "Use as creative brief" consume.
 
 ## Agents & personas

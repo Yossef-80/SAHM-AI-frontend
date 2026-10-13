@@ -37,19 +37,19 @@
     "loginSubtitle": "Welcome back. Your marketing team is waiting.",
     "registerTitle": "Create your workspace",
     "registerSubtitle": "One account, one workspace, your whole team on autopilot.",
-      "submitLogin": "Sign in",
-      "networkUnavailable": "Connection failed. Check that the app server and internet connection are available, then try again.",
-      "oauthDeferred": "Google and GitHub sign-in will be available in a later update.",
-      "passwordResetDeferred": "Password recovery is not available yet. Contact your workspace administrator.",
-      "forgotPassword": "Forgot password?",
-      "resetPasswordTitle": "Reset your password",
-      "resetPasswordSubtitle": "We’ll email you a secure link to choose a new password.",
-      "sendResetLink": "Send reset link",
-      "resetLinkSent": "If an account exists for that email, a password reset link is on its way.",
-      "newPassword": "New password",
-      "saveNewPassword": "Save new password",
-      "passwordUpdated": "Your password was updated. You can sign in now.",
-      "resetLinkInvalid": "This reset link is invalid or expired. Request a new one.",
+    "submitLogin": "Sign in",
+    "networkUnavailable": "Connection failed. Check that the app server and internet connection are available, then try again.",
+    "oauthDeferred": "Google and GitHub sign-in will be available in a later update.",
+    "passwordResetDeferred": "Password recovery is not available yet. Contact your workspace administrator.",
+    "forgotPassword": "Forgot password?",
+    "resetPasswordTitle": "Reset your password",
+    "resetPasswordSubtitle": "We’ll email you a secure link to choose a new password.",
+    "sendResetLink": "Send reset link",
+    "resetLinkSent": "If an account exists for that email, a password reset link is on its way.",
+    "newPassword": "New password",
+    "saveNewPassword": "Save new password",
+    "passwordUpdated": "Your password was updated. You can sign in now.",
+    "resetLinkInvalid": "This reset link is invalid or expired. Request a new one.",
     "submitRegister": "Create account",
     "working": "Working…",
     "email": "Email address",
@@ -81,11 +81,7 @@
     "completeProfileSubtitle": "Welcome! Please provide a few details to set up your workspace.",
     "fullNameRequired": "Full name is required",
     "workspaceRequired": "Workspace name is required",
-    "fullNameHint": "Optional — shown to your team.",
-    "workspaceHint": "This becomes your first business. You can add more workspaces later.",
-    "workspacePlaceholder": "Nile Coffee Roasters",
     "submitCompleteProfile": "Create Workspace",
-    "working": "Working…",
     "signOutAndRetry": "Sign out and try again",
     "unexpectedError": "Something went wrong. Please try again.",
     "role": {
@@ -237,7 +233,12 @@
     "GENERATE_MARKETING_STRATEGY": "Generate marketing strategy",
     "GENERATE_CONTENT_CALENDAR": "Generate content calendar",
     "GENERATE_TEXT": "Generate",
-    "UPDATE_AGENT": "Save agent"
+    "UPDATE_AGENT": "Save agent",
+    "creativePromptImageStart": "Layla, help me prepare a strong image-generation prompt. Start with one grouped checklist of missing details. If I attach a reference, analyze what is visible, then show a preserve/change plan and wait for my approval before writing the final prompt. Do not generate media.",
+    "creativePromptVideoStart": "Layla, help me prepare a strong video-generation prompt. Start with one grouped checklist of missing details, including duration, shot progression, camera/motion, transitions, audio, dialogue, on-screen text, and ending when relevant. If I attach a reference, analyze what is visible, then show a preserve/change plan and wait for my approval before writing the final prompt. Do not generate media.",
+    "creativePromptBriefLabel": "My starting brief",
+    "creativePromptReferenceLabel": "Selected reference",
+    "imageProviderMissing": "The image generator is not configured. Ask the workspace owner to set the image provider and its key in Settings → Admin → Connectors → Image generation. The system never returns placeholder images."
   },
   "home": {
     "heroTitle": "What should we work on today?",
@@ -264,6 +265,14 @@
     "noConversations": "No conversations yet",
     "startOne": "Start a conversation",
     "placeholder": "Ask the assistant…",
+    "uploadReference": "Attach reference image",
+    "analyzingReference": "Analyzing reference…",
+    "referenceReady": "Reference analyzed and attached to this chat.",
+    "referenceUploadFailed": "The reference image could not be analyzed. No analysis was assumed.",
+    "referenceTooLarge": "Image must be 2 MB or smaller.",
+    "referenceUnsupported": "Choose a PNG, JPEG, or WebP image.",
+    "referenceAnalysisUnavailable": "The VLM analysis is unavailable, so this image was not attached as an analyzed reference.",
+    "savedReferences": "Saved references",
     "send": "Send",
     "stop": "Stop",
     "context": "Context",
@@ -297,7 +306,24 @@
     "task": "Agent task",
     "retryMessage": "Retry",
     "removeContext": "Remove {label} from context",
-    "conversationLoadError": "Couldn't load this conversation."
+    "conversationLoadError": "Couldn't load this conversation.",
+    "talkingTo": "Talking to:",
+    "agentAuto": "Automatic routing",
+    "modeGroup": "Request type",
+    "mode": {
+      "chat": {
+        "label": "Chat",
+        "hint": "Ask anything about marketing and ads — no design is produced."
+      },
+      "prompt": {
+        "label": "Prompt",
+        "hint": "Layla writes a ready image prompt you can copy or edit — no image is generated."
+      },
+      "design": {
+        "label": "Design",
+        "hint": "Layla actually generates the image. With a reference attached it is edited from that image, so the design matches the original and only your product changes."
+      }
+    }
   },
   "blocks": {
     "findings": "Findings",
@@ -307,6 +333,9 @@
     "changes": "Changes",
     "metrics": "Metrics",
     "task": "Task",
+    "result": "Saved result",
+    "partialResult": "Partial result",
+    "variations": "Variations",
     "select": "Select an option",
     "submit": "Submit",
     "error": "Error"
@@ -329,6 +358,8 @@
     "pause": "Pause",
     "resume": "Resume",
     "editBudget": "Edit budget",
+    "continueOnMeta": "Continue on Meta",
+    "continueOnMetaHint": "This campaign is still a draft — nothing exists on Meta yet. Opens the campaign wizard pre-filled so you can build and publish the plan.",
     "newBudget": "New daily budget",
     "perDay": "/day",
     "tabs": {
@@ -377,7 +408,20 @@
       "empty": "No performance data",
       "emptyDesc": "Data appears once the campaign has delivered impressions.",
       "last14": "Last 14 days",
-      "date": "Date"
+      "date": "Date",
+      "adLevelTitle": "Meta Insights by Ad",
+      "noAdRows": "No ad-level rows were returned for this date range.",
+      "creative": "Final creative",
+      "metaAdId": "Meta Ad ID",
+      "prompt": "Saved prompt",
+      "viewPrompt": "View exact prompt",
+      "unmapped": "Unmapped",
+      "noExactMatch": "No exact Creative ID match; prompt and image intentionally withheld.",
+      "metaActions": "Meta action breakdown",
+      "trendTitle": "Daily campaign performance",
+      "trendRange": "{start} – {end} · {days} days",
+      "trendEmpty": "No daily data yet. Numbers arrive from Meta after the ad's first impression.",
+      "trendMetric": "Daily spend"
     },
     "recommendations": {
       "empty": "No recommendations",
@@ -412,6 +456,7 @@
         "objective": "Objective",
         "budget": "Daily budget",
         "currency": "Currency",
+        "currencyPlaceholder": "Select currency",
         "startDate": "Start date",
         "endDate": "End date (optional)"
       },
@@ -425,7 +470,11 @@
         "gender": "Gender",
         "all": "All",
         "male": "Male",
-        "female": "Female"
+        "female": "Female",
+        "interestsPlaceholder": "Search for an interest by name…",
+        "interestsHint": "Selections are sent to Meta as real interest IDs, so the targeting actually applies. Leave empty for no interest targeting.",
+        "interestsUnavailable": "Could not fetch interests from Meta — check the connection, or continue without interest targeting.",
+        "removeInterest": "Remove {name}"
       },
       "strategy": {
         "generate": "Generate strategy with AI",
@@ -440,7 +489,11 @@
         "selected": "{count} selected",
         "empty": "No creatives available",
         "emptyDesc": "You can add creatives after creating the campaign.",
-        "createNew": "Create new creative"
+        "createNew": "Create new creative",
+        "upload": "Upload image",
+        "uploading": "Uploading…",
+        "uploadHint": "PNG, JPEG or WebP, up to 10 MB",
+        "uploadFailed": "The upload failed. Try another image."
       },
       "review": {
         "title": "Review",
@@ -452,18 +505,71 @@
         "creativeCount": "{count, plural, =0 {No creatives} one {# creative} other {# creatives}}"
       },
       "launch": {
-        "title": "Ready to launch?",
-        "desc": "Launching publishes the campaign to Meta and starts spending. Saving as draft keeps everything editable.",
+        "title": "Review and confirm",
+        "desc": "Check the campaign summary and the ad details that customers will see.",
+        "pausedOnly": "After your confirmation, Meta objects are created as PAUSED. They will not be delivered or spend budget until separately enabled.",
+        "settingsIntro": "The workspace owner manages the Meta account and Facebook Page. Technical values are derived automatically from the campaign objective, so you never have to enter them.",
+        "advancedTitle": "Advanced Meta settings",
+        "advancedDescription": "These platform-level values are for an administrator. Do not guess them; an incorrect value can make Meta reject the campaign or change its targeting.",
+        "metaAccountNotNamed": "Configured Meta Ad Account",
         "saveDraft": "Save as draft",
-        "launchNow": "Launch now",
-        "requiresMeta": "Connect a Meta account before launching.",
-        "confirmTitle": "Launch \"{name}\"",
-        "confirmDesc": "This will start spending {budget} {currency}/day."
+        "preparePlan": "Review campaign",
+        "requiresMeta": "Ask the workspace owner to configure the Meta access token, ad account ID, and Facebook Page ID in Settings → Admin → Connectors → Meta.",
+        "checkingMeta": "Checking saved Meta configuration…",
+        "completeRequired": "Some campaign details still need attention. Check the fields below.",
+        "savedNoWrite": "Saved locally only. No Meta request has been made and no ad object exists yet.",
+        "ids": "Campaign {campaignId} · Approval {recommendationId}",
+        "reviewPlan": "Review campaign summary",
+        "reviewDiff": "Approval diff",
+        "fullSettings": "Full non-secret settings being reviewed",
+        "confirmPaused": "Confirm and create paused campaign",
+        "retryMetaCreation": "Review safe retry",
+        "retrySafeHint": "The failed attempt created no Meta objects. This retries with the saved campaign details.",
+        "fields": {
+          "pageId": "Meta Page ID",
+          "billingEvent": "Billing event",
+          "optimizationGoal": "Optimization goal",
+          "targeting": "Meta targeting JSON (geo_locations required)",
+          "specialAdCategories": "Special Ad Categories JSON",
+          "destinationType": "Destination type (objective-specific)",
+          "promotedObject": "Promoted object JSON (objective-specific)",
+          "destinationUrl": "Final destination URL (HTTPS)",
+          "primaryText": "Ad primary text",
+          "headline": "Ad headline",
+          "callToAction": "Call-to-action JSON",
+          "instagramActorId": "Instagram actor ID (optional)",
+          "creatives": "1–10 final public HTTPS image creatives",
+          "optional": "Optional",
+          "countries": "Target countries"
+        },
+        "placeholders": {
+          "pageId": "Enter the Page ID",
+          "billingEvent": "Enter the exact Meta billing event",
+          "optimizationGoal": "Enter the exact Meta optimization goal",
+          "destinationType": "Enter the exact Meta destination type"
+        },
+        "hints": {
+          "specialAdCategories": "Enter [] explicitly when none apply; otherwise enter Meta's exact category strings.",
+          "targeting": "Enter the exact targeting object. No location or interest IDs are inferred from the audience description.",
+          "callToAction": "Enter the complete non-secret Meta call_to_action object, including type and value.",
+          "promotedObject": "Required for Leads, Sales, and App installs. Supply the exact promoted_object fields for your account and event.",
+          "countries": "Choose the countries where your ad should run. This is the only targeting decision left for you to make."
+        },
+        "promotedObjectNotice": "The objective you chose needs a Meta Pixel or app connected. Ask the workspace owner to connect it in Settings → Connectors → Meta.",
+        "activateTitle": "Activate the campaign on Meta",
+        "activateWarn": "The campaign was created paused. Activating starts real delivery and spends your budget, and cannot be undone.",
+        "activatePreview": "See what will be activated",
+        "activateConfirm": "Confirm activation — spending starts",
+        "confirmRetry": "Confirm retry",
+        "metaAttempted": "A Meta creation attempt was made. The campaign details remain saved; you do not need to refill the wizard."
       },
       "validation": {
+        "objectiveRequired": "Choose a campaign objective",
         "nameRequired": "Name must be at least 2 characters",
         "budgetPositive": "Budget must be greater than 0",
-        "audienceName": "Audience name is required"
+        "currencyRequired": "Select a currency",
+        "audienceName": "Audience name is required",
+        "ageRange": "Enter a valid age range from 13 to 65"
       }
     }
   },
@@ -490,7 +596,17 @@
       "count": "How many",
       "generate": "Generate",
       "generating": "Generating…",
-      "briefRequired": "Brief must be at least 3 characters"
+      "briefRequired": "Brief must be at least 3 characters",
+      "includeSavedStyle": "Use saved brand visual style",
+      "styleIncluded": "Saved visual style included",
+      "savedStyleAvailable": "A shared workspace style is saved. It is added only when you enable it.",
+      "styleNotSet": "No shared visual style is saved yet. Add one in Settings → Business profile.",
+      "savedStylePreview": "Style to apply: {style}",
+      "preferredStylePrompt": "Preferred visual style to apply: {style}. Follow it for visual direction unless the brief explicitly overrides it.",
+      "reference": "Reference image",
+      "noReference": "No reference (description only)",
+      "referenceHintOff": "Without a reference the image is drawn from the description alone — it will look good, but will not match any existing design.",
+      "referenceHintOn": "With a reference the image is edited from that image itself, so layout, colours and text stay as in the original and only your product changes."
     },
     "reference": {
       "title": "Analyze a reference ad",
@@ -510,10 +626,54 @@
       "estimated": "Estimated performance",
       "inspiredBrief": "Inspired brief",
       "createInspired": "Create inspired version",
+      "continueWithImagePrompt": "Continue with Layla (image prompt)",
+      "continueWithVideoPrompt": "Continue with Layla (video prompt)",
       "sourceRequired": "Upload a file or paste a URL",
       "low": "Low",
       "medium": "Medium",
-      "high": "High"
+      "high": "High",
+      "supportedFormats": "Supported image files: PNG, JPEG, or WebP (up to 2 MB). Video analysis is not available here.",
+      "unsupportedFile": "Choose a PNG, JPEG, or WebP image.",
+      "detailsTitle": "Image details observed",
+      "canvasRatio": "Canvas ratio",
+      "background": "Background",
+      "lighting": "Lighting",
+      "composition": "Composition",
+      "typography": "Typography",
+      "layoutPattern": "Layout pattern",
+      "colorMood": "Color mood",
+      "textDensity": "Text density",
+      "brandElements": "Brand elements",
+      "palette": "Palette",
+      "visibleText": "Legible text",
+      "elements": "Visible elements (up to 24)",
+      "element": "Visible element",
+      "layerOrder": "Layer",
+      "relativePosition": "Approx. position",
+      "relativeSize": "Approx. size",
+      "appearance": "Appearance",
+      "elementText": "Visible text",
+      "analysisNotes": "Analysis notes",
+      "observedOffers": "Visible offer claims",
+      "observedCta": "Visible call to action",
+      "fileTooLarge": "The image is over the 2 MB upload limit. Choose a smaller file.",
+      "fileReadError": "The image could not be read. Choose the file again or use a public image URL.",
+      "analysisUnavailable": "The image could not be analysed, so no visual details are available."
+    },
+    "references": {
+      "title": "Reference library",
+      "description": "Saved VLM analyses you can reuse in Layla prompt chats. References are selected explicitly; favorites are not automatically applied.",
+      "noSummary": "No summary saved.",
+      "favorite": "Add to favorites",
+      "unfavorite": "Remove from favorites",
+      "favoriteLabel": "Favorite",
+      "composition": "Composition",
+      "layout": "Layout",
+      "useForImage": "Plan image prompt",
+      "useForVideo": "Plan video prompt",
+      "loading": "Loading saved references…",
+      "error": "Saved references could not be loaded.",
+      "empty": "No saved references yet. Analyze an image to add one."
     },
     "card": {
       "menu": "Creative actions",
@@ -536,9 +696,20 @@
         "generate_commercial_script": "Commercial script (15s)",
         "generate_image_prompt": "Image prompt",
         "generate_video_prompt": "Video prompt",
-        "generate_ad_copy": "Ad copy"
-      }
-    }
+        "generate_ad_copy": "Ad copy",
+        "generate_ad_variations": "Ad variations"
+      },
+      "includeSavedStyle": "Use saved brand visual style",
+      "styleIncluded": "Saved visual style included",
+      "savedStyleAvailable": "A shared workspace style is saved. It is added only when you enable it.",
+      "styleNotSet": "No shared visual style is saved yet. Add one in Settings → Business profile.",
+      "savedStylePreview": "Style to apply: {style}",
+      "preferredStylePrompt": "Preferred visual style to apply: {style}. Follow it for visual direction unless the brief explicitly overrides it.",
+      "outputModeNote": "Layla returns briefs, copy, scripts and generation prompts here; this does not render a finished video.",
+      "demoModeNote": "Demo mode is active: this uses illustrative local data, not a live AI request. Set NEXT_PUBLIC_USE_MOCKS=false in the frontend build to use the backend."
+    },
+    "imageProviderMissing": "Image generation is not configured. Ask the workspace owner to set the image provider and key in Settings → Admin → Connectors → Image generation.",
+    "imageProviderMissingShort": "Not configured"
   },
   "insights": {
     "title": "Insights",
@@ -555,37 +726,41 @@
     "title": "Integrations",
     "meta": {
       "title": "Meta Ads",
-      "desc": "Publish campaigns and read performance from Facebook & Instagram.",
+      "desc": "Meta credentials are managed by a workspace owner. Campaigns are created paused and require a separate approval.",
       "account": "Ad account",
-      "page": "Page",
+      "page": "Facebook Page",
+      "pageConfigured": "Configured",
+      "pageMissing": "Needs setup",
+      "adminManaged": "An owner can set the access token, ad account ID, and Page ID in Settings → Admin → Connectors → Meta. Secrets stay server-side and are never shown here.",
+      "manageSettings": "Manage Meta settings",
       "permissions": "Permissions",
-      "connectedAt": "Connected",
+      "connectedAt": "Last configured",
       "expiresAt": "Token expires",
       "states": {
         "not_connected": {
-          "title": "Not connected",
-          "desc": "Connect your Meta Business account to publish campaigns and sync performance.",
-          "action": "Connect Meta"
+          "title": "Not configured",
+          "desc": "Ask a workspace owner to configure the Meta connector before preparing a campaign.",
+          "action": "Configure Meta"
         },
         "connecting": {
-          "title": "Connecting…",
-          "desc": "Complete the authorization in the Meta window. This usually takes a few seconds.",
-          "action": "Connecting…"
+          "title": "Checking configuration…",
+          "desc": "The app is checking the saved Meta connector settings.",
+          "action": "Checking…"
         },
         "connected": {
-          "title": "Connected",
-          "desc": "Campaigns can be published and metrics are syncing.",
-          "action": "Disconnect"
+          "title": "Ad account configured",
+          "desc": "Review the Facebook Page status below. Creating a campaign still requires explicit approval.",
+          "action": "Manage settings"
         },
         "needs_reauth": {
-          "title": "Re-authorization needed",
-          "desc": "Your token expired or is missing permissions. Reconnect to resume publishing.",
-          "action": "Re-authorize"
+          "title": "Meta setup needs attention",
+          "desc": "Ask a workspace owner to review the saved token and permissions in Admin → Connectors.",
+          "action": "Manage settings"
         },
         "error": {
-          "title": "Connection failed",
-          "desc": "Something went wrong during authorization.",
-          "action": "Try again"
+          "title": "Meta setup incomplete",
+          "desc": "Review the saved Meta connector settings. No campaign was created.",
+          "action": "Manage settings"
         }
       }
     }
@@ -644,7 +819,7 @@
       "brandVoice": "Brand voice",
       "brandVoiceHint": "How the brand speaks. The most-used field after the offers.",
       "visualStyle": "Visual style",
-      "visualStyleHint": "Colours, materials, lighting, composition.",
+      "visualStyleHint": "Describe the team’s preferred looks (palette, lighting, materials, composition, or references). Layla can use this shared workspace style when you choose it during generation.",
       "targetAudience": "Target audience",
       "targetAudienceHint": "Who this is for, in your own words.",
       "goals": "Goals",
@@ -667,7 +842,19 @@
       "save": "Save changes",
       "revert": "Discard changes",
       "unsaved": "{count} unsaved change(s)",
-      "upToDate": "No unsaved changes."
+      "upToDate": "No unsaved changes.",
+      "stylePresetsTitle": "Quick-add a preferred style",
+      "stylePresetsHint": "Add one or more starting points, then edit the text above to be specific.",
+      "stylePresets": {
+        "minimal": "Clean minimal",
+        "editorial": "Editorial product photography",
+        "cinematic": "Cinematic lighting",
+        "premium": "Premium / luxury",
+        "natural": "Natural UGC look",
+        "playful": "Playful illustration",
+        "bold": "Bold graphic design",
+        "pastel": "Soft pastel palette"
+      }
     }
   },
   "connectors": {
@@ -946,7 +1133,9 @@
       "delete": "Delete",
       "save": "Save changes",
       "createCreative": "Create creative for this",
-      "openCreative": "Open creative"
+      "openCreative": "Open creative",
+      "imageGenOff": "Image generation is not enabled. Connect a real image provider (OpenAI) to use this button — the system never returns placeholder images.",
+      "imageGenLink": "Open Settings → Connectors"
     },
     "channel": {
       "instagram": "Instagram",
@@ -1050,6 +1239,7 @@
       "generate_ad_variations": "Ad variations",
       "publish_meta_ads": "Publish Meta ads",
       "analyze_performance": "Performance analysis"
-    }
+    },
+    "chat": "Chat"
   }
 }

@@ -58,7 +58,7 @@ function KnownBlock({ block, ctx }: { block: MessageBlock; ctx: BlockContext }) 
     case "metric":
       return <MetricBlockView block={block} />;
     case "action_card":
-      return <ActionCardBlockView block={block} />;
+      return <ActionCardBlockView block={block} ctx={ctx} />;
     case "task_progress":
       return <TaskProgressBlockView block={block} ctx={ctx} />;
     case "context_used":
@@ -328,7 +328,7 @@ export function MetricBlockView({ block }: { block: MetricBlock }) {
 /* action_card                                                         */
 /* ------------------------------------------------------------------ */
 
-export function ActionCardBlockView({ block }: { block: ActionCardBlock }) {
+export function ActionCardBlockView({ block, ctx }: { block: ActionCardBlock; ctx: BlockContext }) {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -337,7 +337,18 @@ export function ActionCardBlockView({ block }: { block: ActionCardBlock }) {
       </CardHeader>
       <CardContent className="flex flex-wrap gap-2">
         {block.actions.map((a, i) => (
-          <ActionButton key={i} size="sm" variant={i === 0 ? "default" : "outline"} action={a} />
+          <ActionButton
+            key={i}
+            size="sm"
+            variant={i === 0 ? "default" : "outline"}
+            action={{
+              ...a,
+              payload: {
+                ...a.payload,
+                ...(ctx.conversationId ? { conversationId: ctx.conversationId } : {}),
+              },
+            }}
+          />
         ))}
       </CardContent>
     </Card>
@@ -347,6 +358,81 @@ export function ActionCardBlockView({ block }: { block: ActionCardBlock }) {
 /* ------------------------------------------------------------------ */
 /* task_progress — polls the task; refreshes the conversation on done  */
 /* ------------------------------------------------------------------ */
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function firstText(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function resultItemText(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const title = firstText(record, ["headline", "title", "name", "topic", "hook", "text", "primary_text"]);
+  const detail = firstText(record, ["primary_text", "detail", "description", "rationale", "positioning", "visual_direction", "goal", "summary"]);
+  const label = title && detail && title !== detail ? `${title}: ${detail}` : title ?? detail;
+  if (label) return label;
+  const fields = Object.entries(record)
+    .filter(([, item]) => typeof item === "string" || typeof item === "number")
+    .slice(0, 3)
+    .map(([key, item]) => `${key.replace(/_/g, " ")}: ${String(item)}`);
+  return fields.length ? fields.join(" · ") : undefined;
+}
+
+function variationText(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const headline = firstText(record, ["headline", "title", "hook", "angle"]);
+  const copy = firstText(record, ["primary_text", "text", "copy", "description"]);
+  const cta = firstText(record, ["cta", "call_to_action"]);
+  return [headline, copy, cta].filter(Boolean).join(" — ") || undefined;
+}
+
+const RESULT_ARRAY_LABELS: Record<string, string> = {
+  assumptions: "Assumptions",
+  audiences: "Audiences",
+  channels: "Channels",
+  common_patterns: "Common patterns",
+  competitors: "Competitors",
+  creatives_needed: "Creatives needed",
+  ctas: "Calls to action",
+  details: "Details",
+  differentiation_opportunities: "Differentiation opportunities",
+  evidence: "Evidence",
+  findings: "Findings",
+  gaps: "Market gaps",
+  headlines: "Headlines",
+  items: "Calendar items",
+  key_messages: "Key messages",
+  missing_inputs: "Missing inputs",
+  opportunities: "Opportunities",
+  offers: "Offers",
+  phases: "Phases",
+  primary_texts: "Primary text",
+  pricing_observations: "Price observations",
+  prompts: "Prompts",
+  recommendations: "Recommendations",
+  risks: "Risks",
+  scenes: "Scenes",
+  segments: "Audience segments",
+  shots: "Shots",
+  target_segments: "Target segments",
+  themes: "Themes",
+  unavailable_sources: "Unavailable sources",
+  value_propositions: "Value propositions",
+  variations: "Variations",
+};
 
 const stepIcon = {
   queued: <Circle className="h-3.5 w-3.5 text-muted-foreground" />,
@@ -361,6 +447,21 @@ export function TaskProgressBlockView({ block, ctx }: { block: TaskProgressBlock
   const snapshotDone = block.task && (block.task.status === "succeeded" || block.task.status === "failed");
   const q = useTask(block.taskId, !snapshotDone);
   const task = q.data ?? block.task;
+  const rawResult = task?.result;
+  const output = asRecord(rawResult?.output) ?? rawResult ?? {};
+  const resultSummary = firstText(output, ["summary", "report", "message", "recommendation", "concept", "primary_text"]);
+  const variations = Array.isArray(output.variations)
+    ? output.variations.map(variationText).filter((value): value is string => Boolean(value)).slice(0, 5)
+    : [];
+  const resultSections = Object.entries(output)
+    .filter(([key, value]) => key !== "variations" && Boolean(RESULT_ARRAY_LABELS[key]) && Array.isArray(value) && value.length > 0)
+    .map(([key, value]) => ({
+      key,
+      label: RESULT_ARRAY_LABELS[key],
+      items: (value as unknown[]).map(resultItemText).filter((item): item is string => Boolean(item)).slice(0, 5),
+    }))
+    .filter((section) => section.items.length > 0)
+    .slice(0, 8);
   const [refreshed, setRefreshed] = useState(false);
 
   useEffect(() => {
@@ -398,6 +499,33 @@ export function TaskProgressBlockView({ block, ctx }: { block: TaskProgressBlock
           ))}
         </ul>
         {task.error && <p className="text-xs text-destructive">{task.error}</p>}
+        {(resultSummary || variations.length > 0 || resultSections.length > 0) && (
+          <section
+            className="space-y-2 rounded-md border bg-background p-3"
+            aria-label={task.status === "succeeded" ? t("result") : t("partialResult")}
+          >
+            <p className="text-xs font-semibold">
+              {task.status === "succeeded" ? t("result") : t("partialResult")}
+            </p>
+            {resultSummary && <p className="whitespace-pre-wrap text-xs leading-relaxed">{resultSummary.slice(0, 1800)}</p>}
+            {variations.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium">{t("variations")}</p>
+                <ol className="list-decimal space-y-1 ps-5 text-xs">
+                  {variations.map((variation, index) => <li key={index}>{variation.slice(0, 500)}</li>)}
+                </ol>
+              </div>
+            )}
+            {resultSections.map((section) => (
+              <div key={section.key} className="space-y-1">
+                <p className="text-xs font-medium">{section.label}</p>
+                <ul className="list-disc space-y-1 ps-5 text-xs">
+                  {section.items.map((item, index) => <li key={index}>{item.slice(0, 500)}</li>)}
+                </ul>
+              </div>
+            ))}
+          </section>
+        )}
       </CardContent>
     </Card>
   );

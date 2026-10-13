@@ -21,6 +21,10 @@ type Draft = Record<string, string>;
 
 const draftKey = (connector: string, field: string) => `${connector}.${field}`;
 
+/** Backend field keys are snake_case; PATCH bodies use the public camelCase API contract. */
+const connectorPatchKey = (field: string) =>
+  field.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+
 /**
  * Secrets are write-only by design: the backend returns `value: null` for every
  * `secret: true` field and reports `hasValue`/`masked` instead. So a secret row
@@ -135,7 +139,9 @@ function ConnectorCard({
 
   const save = async () => {
     const body: Record<string, string | null> = {};
-    for (const [key, value] of Object.entries(draft)) body[key] = value.trim() === "" ? null : value.trim();
+    for (const [key, value] of Object.entries(draft)) {
+      body[connectorPatchKey(key)] = value.trim() === "" ? null : value.trim();
+    }
     if (!Object.keys(body).length) return;
     try {
       await update.mutateAsync({ connector: connector.connector, patch: body });
@@ -229,6 +235,7 @@ export function ConnectorsView() {
       <PageHeader title={t("title")} description={t("description")} />
       <AsyncBoundary
         isLoading={query.isLoading}
+        isPending={query.isPending}
         isError={query.isError}
         error={query.error}
         data={query.data}

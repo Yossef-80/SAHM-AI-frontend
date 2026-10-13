@@ -8,6 +8,7 @@ import type {
   AuditFilters,
   BusinessProfileUpdateInput,
   CampaignDraft,
+  MetaAdPlanSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
   GenerateCreativeInput,
@@ -36,6 +37,8 @@ export const useCampaign = (id: string) =>
   useQuery({ queryKey: qk.campaign(id), queryFn: () => api.getCampaign(id), enabled: !!id });
 export const useCampaignPerformance = (id: string) =>
   useQuery({ queryKey: qk.campaignPerformance(id), queryFn: () => api.getCampaignPerformance(id), enabled: !!id });
+export const useCampaignAdInsights = (id: string) =>
+  useQuery({ queryKey: ["campaignAdInsights", id], queryFn: () => api.getCampaignAdInsights(id), enabled: !!id });
 export const useCampaignRecommendations = (id: string) =>
   useQuery({ queryKey: qk.campaignRecommendations(id), queryFn: () => api.getCampaignRecommendations(id), enabled: !!id });
 export const useAudience = (id: string | null) =>
@@ -50,12 +53,52 @@ export const useCreateCampaign = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
   });
 };
+export const usePrepareMetaAdPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ draft, plan }: { draft: CampaignDraft; plan: MetaAdPlanSettings }) =>
+      api.prepareMetaAdPlan(draft, plan),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
+  });
+};
+export const useActivateMetaAdPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { recommendationId: string; confirm: boolean }) =>
+      api.activateMetaAdPlan(input.recommendationId, input.confirm),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaignAdInsights"] });
+    },
+  });
+};
+export const usePreviewMetaAdPlan = () =>
+  useMutation({ mutationFn: (recommendationId: string) => api.previewMetaAdPlan(recommendationId) });
+export const useConfirmMetaAdPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (recommendationId: string) => api.confirmMetaAdPlan(recommendationId),
+    onSuccess: (_result, recommendationId) => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaignAdInsights"] });
+      qc.invalidateQueries({ queryKey: ["recommendations", recommendationId] });
+    },
+  });
+};
 export const useGenerateStrategy = () =>
   useMutation({ mutationFn: (input: GenerateStrategyInput) => api.generateStrategy(input) });
 
 /* Creatives */
 export const useCreatives = (campaignId?: string) =>
   useQuery({ queryKey: qk.creatives(campaignId), queryFn: () => api.listCreatives(campaignId) });
+export const useUploadCreative = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { file: File; campaignId?: string; note?: string }) =>
+      api.uploadCreative(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["creatives"] }),
+  });
+};
 export const useGenerateCreative = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -63,8 +106,26 @@ export const useGenerateCreative = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["creatives"] }),
   });
 };
-export const useAnalyzeReference = () =>
-  useMutation({ mutationFn: (input: AnalyzeReferenceInput) => api.analyzeReference(input) });
+export const useCreativeReferences = () =>
+  useQuery({ queryKey: qk.creativeReferences, queryFn: () => api.listCreativeReferences() });
+export const useUpdateCreativeReference = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; favorite: boolean }) => api.updateCreativeReference(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.creativeReferences }),
+  });
+};
+export const useAnalyzeReference = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AnalyzeReferenceInput) => api.analyzeReference(input),
+    onSuccess: (result) => {
+      if (result.status !== "unavailable" && result.id !== "ref_unknown") {
+        qc.invalidateQueries({ queryKey: qk.creativeReferences });
+      }
+    },
+  });
+};
 
 /* Insights */
 export const useInsights = (input?: ListInsightsInput) =>
@@ -95,6 +156,18 @@ export const useTask = (id: string, enabled = true) =>
   });
 
 /* Integrations */
+/**
+ * Type-ahead lookup against Meta Targeting Search. Disabled until two characters
+ * so a single keystroke does not spend a rate-limited Graph call.
+ */
+export const useMetaInterestSearch = (query: string) =>
+  useQuery({
+    queryKey: qk.metaInterestSearch(query.trim().toLowerCase()),
+    queryFn: () => api.searchMetaInterests(query.trim()),
+    enabled: query.trim().length >= 2,
+    staleTime: 5 * 60_000,
+  });
+
 export const useMetaConnection = () =>
   useQuery({
     queryKey: qk.meta,
@@ -196,6 +269,23 @@ export const useUpdateBusinessProfile = () => {
 
 export const useConnectorSettings = () =>
   useQuery({ queryKey: qk.connectors, queryFn: () => api.getConnectorSettings() });
+
+/**
+ * Whether image generation can actually run.
+ *
+ * The backend already answers this: `ConnectorOut.configured` is false for a
+ * placeholder provider (`mock`), and `placeholder` says so explicitly. Without
+ * this the Create buttons looked live and the request came back 200 with zero
+ * assets, which the UI reported as a success.
+ */
+export const useImageGenerationReady = () => {
+  const query = useConnectorSettings();
+  const image = query.data?.connectors.find((c) => c.connector === "image");
+  return {
+    isLoading: query.isLoading,
+    ready: Boolean(image?.configured && !image?.placeholder),
+  };
+};
 
 export const useUpdateConnector = () => {
   const qc = useQueryClient();

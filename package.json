@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:task-contract": "node scripts/smoke-task-contract.cjs",
+    "test:assistant-contract": "node scripts/smoke-assistant-contract.cjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",

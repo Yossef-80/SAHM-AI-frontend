@@ -17,9 +17,10 @@ interface Props {
   selected?: boolean;
   onSelect?: () => void;
   showActions?: boolean;
+  onGenerateVariations?: (creative: Creative) => void;
 }
 
-export function CreativeCard({ creative: c, selectable, selected, onSelect, showActions = false }: Props) {
+export function CreativeCard({ creative: c, selectable, selected, onSelect, showActions = false, onGenerateVariations }: Props) {
   const t = useTranslations("creatives");
   const tk = useTranslations("kind");
   const ta = useTranslations("actions");
@@ -67,7 +68,23 @@ export function CreativeCard({ creative: c, selectable, selected, onSelect, show
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => dispatch({ type: "GENERATE_VARIATIONS", payload: { creativeId: c.id, count: 3 } })}>{ta("GENERATE_VARIATIONS")}</DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    onGenerateVariations
+                      ? onGenerateVariations(c)
+                      : dispatch({
+                          type: "GENERATE_VARIATIONS",
+                          payload: {
+                            creativeId: c.id,
+                            campaignId: c.campaignId,
+                            count: 3,
+                            brief: [c.title, c.headline, c.primaryText].filter(Boolean).join("\n"),
+                          },
+                        })
+                  }
+                >
+                  {ta("GENERATE_VARIATIONS")}
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => dispatch({ type: "ANALYZE_CREATIVE", payload: { creativeId: c.id } })}>{ta("ANALYZE_CREATIVE")}</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => dispatch({ type: "ADD_TO_CAMPAIGN", payload: { creativeId: c.id } })}>{ta("ADD_TO_CAMPAIGN")}</DropdownMenuItem>
               </DropdownMenuContent>

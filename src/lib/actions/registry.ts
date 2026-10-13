@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { QueryClient } from "@tanstack/react-query";
-import type { MarketingApi } from "@/lib/api";
+import { ApiError, type MarketingApi } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import type { ActionType, ChangeDiff, CreativeKind, CampaignDraft } from "@/types";
+import type { PendingPrompt } from "@/store/assistant-store";
 import {
   CampaignDraftSchema,
   CampaignStatusSchema,
@@ -32,6 +33,8 @@ export interface ActionContext {
   ui: {
     /** Show a generated text result (brief/script/prompt) in the GeneratedTextDialog. */
     setGeneratedText: (v: import("@/types").GeneratedText | null) => void;
+    setTextRequest: (v: { tool: import("@/types").TextTool; brief: string; campaignId?: string | null; creativeId?: string | null } | null) => void;
+    setPendingPrompt: (v: PendingPrompt) => void;
     setCreateCreative: (v: { kind: CreativeKind; brief?: string; campaignId?: string | null; referenceAnalysisId?: string } | null) => void;
     setCampaignPrefill: (v: Partial<CampaignDraft> | null) => void;
   };
@@ -64,6 +67,30 @@ export interface ActionDefinition<P> {
   handler: (payload: P, ctx: ActionContext) => Promise<ActionResult>;
 }
 
+function buildCreativePromptRequest(
+  ctx: ActionContext,
+  kind: "image" | "video",
+  brief?: string,
+  referenceAnalysisId?: string,
+): PendingPrompt {
+  const intro = ctx.t(kind === "image" ? "creativePromptImageStart" : "creativePromptVideoStart");
+  const startingBrief = brief?.trim();
+  const text = [
+    intro,
+    startingBrief ? `${ctx.t("creativePromptBriefLabel")}: ${startingBrief}` : "",
+  ].filter(Boolean).join("\n\n");
+  return {
+    text,
+    context: referenceAnalysisId
+      ? [{ kind: "reference", id: referenceAnalysisId, label: ctx.t("creativePromptReferenceLabel") }]
+      : [],
+    personaId: "layla",
+    workflow: "creative_prompt",
+    promptType: kind,
+    referenceAnalysisId,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Payload schemas                                                     */
 /* ------------------------------------------------------------------ */
@@ -81,11 +108,22 @@ const CreateCreativePayload = z.object({
   aspectRatio: z.enum(["1:1", "4:5", "9:16", "16:9"]).optional(),
   count: z.number().int().min(1).max(6).optional(),
 });
-const GenerateVariationsPayload = z.object({ creativeId: IdSchema, count: z.number().int().min(1).max(6).default(3) });
-const AnalyzeCampaignPayload = z.object({ campaignId: IdSchema });
-const AnalyzeCreativePayload = z.object({ creativeId: IdSchema });
-const ResearchCompetitorsPayload = z.object({ query: z.string().optional() });
-const OptimizeCampaignPayload = z.object({ campaignId: IdSchema });
+const GenerateVariationsPayload = z
+  .object({
+    creativeId: IdSchema.optional(),
+    brief: z.string().min(1).optional(),
+    campaignId: IdSchema.nullable().optional(),
+    count: z.number().int().min(1).max(6).default(3),
+    conversationId: IdSchema.optional(),
+    task: z.string().optional(),
+  })
+  .refine((payload) => Boolean(payload.creativeId || payload.brief), {
+    message: "A creative id or a brief is required to generate variations.",
+  });
+const AnalyzeCampaignPayload = z.object({ campaignId: IdSchema, conversationId: IdSchema.optional() });
+const AnalyzeCreativePayload = z.object({ creativeId: IdSchema, conversationId: IdSchema.optional() });
+const ResearchCompetitorsPayload = z.object({ query: z.string().optional(), conversationId: IdSchema.optional() });
+const OptimizeCampaignPayload = z.object({ campaignId: IdSchema, conversationId: IdSchema.optional() });
 const ConnectMetaPayload = z.object({ mode: z.enum(["connect", "reauth", "disconnect"]).default("connect") });
 const ApplyRecommendationPayload = z.object({ recommendationId: IdSchema });
 const AddToCampaignPayload = z.object({ creativeId: IdSchema, campaignId: IdSchema.optional() });
@@ -106,6 +144,19 @@ function define<P>(def: ActionDefinition<P>): ActionDefinition<P> {
   return def;
 }
 
+async function startActionTask(
+  type: ActionType,
+  payload: Record<string, unknown>,
+  ctx: ActionContext,
+) {
+  const { conversationId, ...inputs } = payload;
+  return ctx.api.startTask({
+    type,
+    payload: inputs,
+    conversationId: typeof conversationId === "string" ? conversationId : undefined,
+  });
+}
+
 /** Research / strategy tools all share one shape: start a backend task, jump to the conversation where results land. */
 function agentTask<P extends Record<string, unknown>>(type: ActionType, icon: string, payloadSchema: z.ZodType<P>): ActionDefinition<P> {
   return define<P>({
@@ -115,7 +166,7 @@ function agentTask<P extends Record<string, unknown>>(type: ActionType, icon: st
     payloadSchema,
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      const task = await ctx.api.startTask({ type, payload });
+      const task = await startActionTask(type, payload, ctx);
       await invalidate(ctx.queryClient, [qk.conversations]);
       return { ok: true, toastKey: "toast.taskStarted", navigateTo: taskDestination(task.resultRef), data: task };
     },
@@ -131,25 +182,26 @@ export const actionRegistry = {
     labelKey: "CREATE_CAMPAIGN",
     icon: "Megaphone",
     payloadSchema: CreateCampaignPayload,
-    // Launching starts spend → human confirmation. Saving a draft does not.
-    requiresConfirmation: (p) => !!p.draft?.launchNow,
+    // This action only saves a local draft. Meta writes use the dedicated
+    // two-phase Meta ad-plan review flow below the campaign wizard.
+    requiresConfirmation: false,
     async getDiff(payload, ctx) {
       const d = payload.draft!;
       return {
         title: ctx.t("launchTitle", { name: d.name }),
         diff: [
-          { field: "status", label: ctx.t("diff.campaignStatus"), before: "draft", after: "active" },
+          { field: "status", label: ctx.t("diff.campaignStatus"), before: "—", after: "draft (not published)" },
           { field: "dailyBudget", label: ctx.t("diff.dailyBudget"), before: 0, after: `${d.dailyBudget} ${d.currency}` },
         ],
       };
     },
     async handler(payload, ctx) {
       if (payload.draft) {
-        const campaign = await ctx.api.createCampaign(payload.draft);
+        const campaign = await ctx.api.createCampaign({ ...payload.draft, launchNow: false });
         await invalidate(ctx.queryClient, [["campaigns"]]);
         return {
           ok: true,
-          toastKey: payload.draft.launchNow ? "toast.campaignLaunched" : "toast.campaignSaved",
+          toastKey: "toast.campaignSaved",
           toastValues: { name: campaign.name },
           navigateTo: `/campaigns/${campaign.id}`,
           data: campaign,
@@ -167,9 +219,37 @@ export const actionRegistry = {
     payloadSchema: CreateCreativePayload,
     requiresConfirmation: false,
     async handler(payload, ctx) {
+      if (payload.kind === "video") {
+        ctx.ui.setPendingPrompt(buildCreativePromptRequest(ctx, "video", payload.brief, payload.referenceAnalysisId));
+        return { ok: true, navigateTo: "/assistant" };
+      }
+      if (payload.kind !== "image") {
+        ctx.ui.setTextRequest({
+          tool: "generate_ad_copy",
+          brief: payload.brief ?? "",
+          campaignId: payload.campaignId ?? null,
+        });
+        return { ok: true, navigateTo: "/creatives" };
+      }
+      // Image generation needs a real provider. Checking here covers every
+      // entry point at once — calendar sheet, campaign tab, reference dialog,
+      // text dialog and the creatives view — instead of gating each button.
+      // Without this the backend's deliberate refusal reached the user as a raw
+      // "Mock placeholder images are disabled by default" error.
+      const connectorSettings = await ctx.api.getConnectorSettings();
+      const imageConnector = connectorSettings.connectors.find(
+        (c) => c.connector === "image",
+      );
+      if (!imageConnector?.configured || imageConnector.placeholder) {
+        throw new ApiError(
+          "IMAGE_PROVIDER_NOT_CONFIGURED",
+          ctx.t("imageProviderMissing"),
+          503,
+        );
+      }
       if (payload.brief) {
         const created = await ctx.api.generateCreative({
-          kind: payload.kind,
+          kind: "image",
           brief: payload.brief,
           campaignId: payload.campaignId ?? null,
           referenceAnalysisId: payload.referenceAnalysisId,
@@ -191,9 +271,34 @@ export const actionRegistry = {
     payloadSchema: GenerateVariationsPayload,
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      const created = await ctx.api.generateVariations(payload);
-      await invalidate(ctx.queryClient, [["creatives"]]);
-      return { ok: true, toastKey: "toast.variationsGenerated", toastValues: { count: created.length }, navigateTo: "/creatives", data: created };
+      if (payload.creativeId) {
+        const creative = payload.brief
+          ? null
+          : (await ctx.api.listCreatives(payload.campaignId ?? undefined)).find((item) => item.id === payload.creativeId);
+        const brief = payload.brief ?? [
+          creative?.headline,
+          creative?.primaryText,
+          creative?.cta,
+          creative?.prompt ?? creative?.title,
+        ].filter(Boolean).join("\n");
+        if (!brief) throw new Error("The selected creative could not be loaded for Layla.");
+        ctx.ui.setTextRequest({
+          tool: "generate_ad_variations",
+          brief,
+          campaignId: payload.campaignId ?? creative?.campaignId ?? null,
+          creativeId: payload.creativeId,
+        });
+        return { ok: true, navigateTo: "/creatives" };
+      }
+      if (payload.brief) {
+        ctx.ui.setTextRequest({
+          tool: "generate_ad_variations",
+          brief: `${payload.brief.trim()}\n\nPlease provide ${payload.count} distinct ad variations.`,
+          campaignId: payload.campaignId ?? null,
+        });
+        return { ok: true, navigateTo: "/creatives" };
+      }
+      throw new Error("A creative id or brief is required to generate variations.");
     },
   }),
 
@@ -204,7 +309,7 @@ export const actionRegistry = {
     payloadSchema: AnalyzeCampaignPayload,
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      const task = await ctx.api.startTask({ type: "ANALYZE_CAMPAIGN", payload });
+      const task = await startActionTask("ANALYZE_CAMPAIGN", payload, ctx);
       await invalidate(ctx.queryClient, [qk.conversations]);
       return { ok: true, toastKey: "toast.taskStarted", navigateTo: taskDestination(task.resultRef), data: task };
     },
@@ -217,9 +322,22 @@ export const actionRegistry = {
     payloadSchema: AnalyzeCreativePayload,
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      const task = await ctx.api.startTask({ type: "ANALYZE_CREATIVE", payload });
-      await invalidate(ctx.queryClient, [qk.conversations]);
-      return { ok: true, toastKey: "toast.taskStarted", navigateTo: taskDestination(task.resultRef), data: task };
+      const creative = (await ctx.api.listCreatives()).find((item) => item.id === payload.creativeId);
+      const brief = [
+        creative?.prompt ? undefined : creative?.title,
+        creative?.headline,
+        creative?.primaryText,
+        creative?.prompt,
+        creative?.cta,
+      ].filter(Boolean).join("\n");
+      if (!brief) throw new Error("The selected creative has no text context to analyse.");
+      ctx.ui.setTextRequest({
+        tool: "generate_ad_variations",
+        brief: `Analyse the existing creative's message, angle, and clarity, then propose three distinct ad variations. Do not infer unseen visual details or invent claims.\n\n${brief}`,
+        campaignId: creative?.campaignId ?? null,
+        creativeId: payload.creativeId,
+      });
+      return { ok: true, navigateTo: "/creatives" };
     },
   }),
 
@@ -230,7 +348,7 @@ export const actionRegistry = {
     payloadSchema: ResearchCompetitorsPayload,
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      const task = await ctx.api.startTask({ type: "RESEARCH_COMPETITORS", payload });
+      const task = await startActionTask("RESEARCH_COMPETITORS", payload, ctx);
       await invalidate(ctx.queryClient, [qk.conversations]);
       return { ok: true, toastKey: "toast.taskStarted", navigateTo: taskDestination(task.resultRef), data: task };
     },
@@ -243,7 +361,7 @@ export const actionRegistry = {
     payloadSchema: OptimizeCampaignPayload,
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      const task = await ctx.api.startTask({ type: "OPTIMIZE_CAMPAIGN", payload });
+      const task = await startActionTask("OPTIMIZE_CAMPAIGN", payload, ctx);
       await invalidate(ctx.queryClient, [qk.conversations]);
       return { ok: true, toastKey: "toast.taskStarted", navigateTo: taskDestination(task.resultRef), data: task };
     },
@@ -315,14 +433,14 @@ export const actionRegistry = {
   }),
 
   /* ---------------- Research tools (agent tasks → conversation) ---------------- */
-  ANALYZE_WEBSITE: agentTask("ANALYZE_WEBSITE", "Globe", z.object({ url: z.string().min(3) })),
-  ANALYZE_SOCIAL_PROFILE: agentTask("ANALYZE_SOCIAL_PROFILE", "AtSign", z.object({ handle: z.string().min(1), platform: z.enum(["instagram", "tiktok", "facebook"]).default("instagram") })),
-  ANALYZE_REVIEWS: agentTask("ANALYZE_REVIEWS", "Star", z.object({ source: z.string().optional() })),
-  ANALYZE_MARKET: agentTask("ANALYZE_MARKET", "Globe2", z.object({ query: z.string().optional() })),
-  ANALYZE_KEYWORDS: agentTask("ANALYZE_KEYWORDS", "KeyRound", z.object({ seed: z.string().min(1) })),
-  ANALYZE_COMPETITOR_CREATIVES: agentTask("ANALYZE_COMPETITOR_CREATIVES", "Images", z.object({ competitor: z.string().optional() })),
-  DETECT_MARKET_GAPS: agentTask("DETECT_MARKET_GAPS", "Crosshair", z.object({})),
-  GENERATE_MARKETING_STRATEGY: agentTask("GENERATE_MARKETING_STRATEGY", "Compass", z.object({ brief: z.string().optional() })),
+  ANALYZE_WEBSITE: agentTask("ANALYZE_WEBSITE", "Globe", z.object({ url: z.string().min(3), conversationId: IdSchema.optional() })),
+  ANALYZE_SOCIAL_PROFILE: agentTask("ANALYZE_SOCIAL_PROFILE", "AtSign", z.object({ handle: z.string().min(1), platform: z.enum(["instagram", "tiktok", "facebook"]).default("instagram"), conversationId: IdSchema.optional() })),
+  ANALYZE_REVIEWS: agentTask("ANALYZE_REVIEWS", "Star", z.object({ source: z.string().optional(), conversationId: IdSchema.optional() })),
+  ANALYZE_MARKET: agentTask("ANALYZE_MARKET", "Globe2", z.object({ query: z.string().optional(), conversationId: IdSchema.optional() })),
+  ANALYZE_KEYWORDS: agentTask("ANALYZE_KEYWORDS", "KeyRound", z.object({ seed: z.string().min(1), conversationId: IdSchema.optional() })),
+  ANALYZE_COMPETITOR_CREATIVES: agentTask("ANALYZE_COMPETITOR_CREATIVES", "Images", z.object({ competitor: z.string().optional(), conversationId: IdSchema.optional() })),
+  DETECT_MARKET_GAPS: agentTask("DETECT_MARKET_GAPS", "Crosshair", z.object({ conversationId: IdSchema.optional() })),
+  GENERATE_MARKETING_STRATEGY: agentTask("GENERATE_MARKETING_STRATEGY", "Compass", z.object({ brief: z.string().optional(), conversationId: IdSchema.optional() })),
 
   /* ---------------- Generation ---------------- */
   GENERATE_CONTENT_CALENDAR: define({
@@ -346,6 +464,11 @@ export const actionRegistry = {
     payloadSchema: GenerateTextInputSchema,
     requiresConfirmation: false,
     async handler(payload, ctx) {
+      if (payload.tool === "generate_image_prompt" || payload.tool === "generate_video_prompt") {
+        const promptType = payload.tool === "generate_image_prompt" ? "image" : "video";
+        ctx.ui.setPendingPrompt(buildCreativePromptRequest(ctx, promptType, payload.brief));
+        return { ok: true, navigateTo: "/assistant" };
+      }
       const result = await ctx.api.generateText(payload);
       ctx.ui.setGeneratedText(result);
       return { ok: true, data: result };

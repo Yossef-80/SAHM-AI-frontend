@@ -5,6 +5,10 @@ const config: Config = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
+      fontFamily: {
+        /** Outfit, the delivered wordmark face. Set via next/font in app/layout.tsx. */
+        outfit: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -38,6 +42,14 @@ const config: Config = {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        brand: {
+          DEFAULT: "hsl(var(--primary))",
+          violet: "hsl(var(--brand-violet))",
+          pink: "hsl(var(--brand-pink))",
+          ink: "hsl(var(--brand-ink))",
+          slate: "hsl(var(--brand-slate))",
+          mist: "hsl(var(--brand-mist))",
         },
       },
       borderRadius: {

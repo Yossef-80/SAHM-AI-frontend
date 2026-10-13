@@ -103,6 +103,7 @@ export function AuditView() {
 
           <AsyncBoundary
             isLoading={query.isLoading}
+            isPending={query.isPending}
             isError={query.isError}
             error={query.error}
             data={query.data}

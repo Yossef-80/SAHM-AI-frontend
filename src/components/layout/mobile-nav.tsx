@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Menu, Sparkles } from "lucide-react";
+import { Menu } from "lucide-react";
+import { SahmIcon, SahmWordmark } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -30,8 +31,8 @@ export function TopBar() {
         </SheetContent>
       </Sheet>
       <Link href="/" className="flex items-center gap-2 text-sm font-semibold">
-        <Sparkles className="h-4 w-4 text-primary" />
-        {t("app.name")}
+        <SahmIcon variant="gradient" className="h-5 w-5 shrink-0" aria-hidden />
+        <SahmWordmark className="text-sm" />
       </Link>
       <LanguageSwitcher compact />
     </header>

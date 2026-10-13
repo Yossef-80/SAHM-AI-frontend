@@ -6,10 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAssistantStore } from "@/store/assistant-store";
-import { useCampaigns, useCreatives } from "@/hooks/use-api";
+import { useCampaigns, useCreativeReferences, useCreatives } from "@/hooks/use-api";
 import type { ContextChip } from "@/types";
 
-const icon = { campaign: Megaphone, creative: ImageIcon, insight: Lightbulb };
+const icon = { campaign: Megaphone, creative: ImageIcon, insight: Lightbulb, reference: ImageIcon };
 
 export function ContextChips() {
   const t = useTranslations("assistant");
@@ -19,6 +19,7 @@ export function ContextChips() {
   const remove = useAssistantStore((s) => s.removeContext);
   const campaigns = useCampaigns();
   const creatives = useCreatives();
+  const references = useCreativeReferences();
 
   const has = (c: ContextChip) => context.some((x) => x.kind === c.kind && x.id === c.id);
 
@@ -57,6 +58,21 @@ export function ContextChips() {
               {c.title}
             </DropdownMenuItem>
           ))}
+          {(references.data ?? []).length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("savedReferences")}</DropdownMenuLabel>
+              {(references.data ?? []).slice(0, 8).map((reference) => (
+                <DropdownMenuItem
+                  key={reference.id}
+                  disabled={has({ kind: "reference", id: reference.id, label: reference.sourceName })}
+                  onClick={() => add({ kind: "reference", id: reference.id, label: reference.sourceName })}
+                >
+                  {reference.sourceName}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
