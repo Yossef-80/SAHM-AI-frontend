@@ -42,9 +42,11 @@ import {
   AuditListSchema,
   AuthSessionSchema,
   BrandProfileSchema,
+  BrandIdentityResponseSchema,
   BusinessProfileFormSchema,
   BusinessSchema,
   CampaignSchema,
+  CampaignStrategySchema,
   ConnectorDeleteResultSchema,
   ConnectorSchema,
   ConnectorSettingsSchema,
@@ -70,13 +72,17 @@ import type {
   AssistantProgressEvent,
   AuditFilters,
   AuthSession,
+  BrandIdentityResponse,
+  BrandIdentityUpdateRequest,
   BusinessProfileUpdateInput,
   CampaignDraft,
+  CampaignStrategy,
   ConnectorSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
   GenerateContentCalendarInput,
   GenerateCreativeInput,
+  GenerateStrategyInput,
   ListCampaignsInput,
   ListContentInput,
   ListInsightsInput,
@@ -405,6 +411,91 @@ export class HttpApi implements MarketingApi {
     return this.parse(BrandProfileSchema, mapBrandProfile(await this.businessProfile()), "/business/profile");
   }
 
+  async getBrandIdentity(): Promise<BrandIdentityResponse> {
+    const raw = await this.get("/business/brand-identity");
+    return this.parse(BrandIdentityResponseSchema, this.mapBrandIdentity(raw), "/business/brand-identity");
+  }
+
+  async syncBrandIdentity(): Promise<BrandIdentityResponse> {
+    const raw = await this.post("/business/brand-identity/sync", {});
+    return this.parse(BrandIdentityResponseSchema, this.mapBrandIdentity(raw), "/business/brand-identity/sync");
+  }
+
+  async updateBrandIdentity(patch: BrandIdentityUpdateRequest): Promise<BrandIdentityResponse> {
+    const payload = {
+      name: patch.brandName,
+      brandName: patch.brandName,
+      industry: patch.industry,
+      colors: patch.palette,
+      palette: patch.palette,
+      essence: patch.essence,
+      audience: patch.targetAudience,
+      targetAudience: patch.targetAudience,
+      swot: patch.swot,
+      keyOffers: patch.keyOffers,
+      competitors: patch.competitors,
+      marketGaps: patch.marketGaps,
+    };
+    const raw = await this.patch("/business/brand-identity", payload);
+    return this.parse(BrandIdentityResponseSchema, this.mapBrandIdentity(raw), "/business/brand-identity");
+  }
+
+  private mapBrandIdentity(raw: unknown): BrandIdentityResponse {
+    const rawObj = isRecord(raw) ? raw : {};
+    const p = isRecord(rawObj.colors)
+      ? rawObj.colors
+      : isRecord(rawObj.palette)
+        ? rawObj.palette
+        : {};
+    const e = isRecord(rawObj.essence) ? rawObj.essence : {};
+    const t = isRecord(rawObj.audience)
+      ? rawObj.audience
+      : isRecord(rawObj.target_audience)
+        ? rawObj.target_audience
+        : isRecord(rawObj.targetAudience)
+          ? rawObj.targetAudience
+          : {};
+    const s = isRecord(rawObj.swot) ? rawObj.swot : {};
+
+    return {
+      businessId: String(rawObj.business_id ?? rawObj.businessId ?? ""),
+      brandName: String(rawObj.name ?? rawObj.brand_name ?? rawObj.brandName ?? "Brand"),
+      industry: String(rawObj.industry ?? "Marketing & E-commerce"),
+      palette: {
+        primary: String(p.primary ?? "#2563EB"),
+        secondary: String(p.secondary ?? "#1E293B"),
+        accent: String(p.accent ?? "#F59E0B"),
+        background: String(p.background ?? "#F8FAFC"),
+        text: String(p.text ?? "#0F172A"),
+        palette: asArray(p.palette).map(String),
+      },
+      essence: {
+        tagline: String(e.tagline ?? ""),
+        mission: String(e.mission ?? ""),
+        vision: String(e.vision ?? ""),
+        brandVoice: String(e.brand_voice ?? e.brandVoice ?? ""),
+        toneKeywords: asArray(e.tone_keywords ?? e.toneKeywords).map(String),
+        archetype: e.archetype ? String(e.archetype) : undefined,
+      },
+      targetAudience: {
+        summary: String(t.summary ?? ""),
+        demographics: String(t.demographics ?? ""),
+        painPoints: asArray(t.pain_points ?? t.painPoints).map(String),
+        goals: asArray(t.goals).map(String),
+      },
+      swot: {
+        strengths: asArray(s.strengths).map(String),
+        weaknesses: asArray(s.weaknesses).map(String),
+        opportunities: asArray(s.opportunities).map(String),
+        threats: asArray(s.threats).map(String),
+      },
+      keyOffers: asArray(rawObj.key_offers ?? rawObj.keyOffers).map(String),
+      competitors: asArray(rawObj.competitors).map(String),
+      marketGaps: asArray(rawObj.market_gaps ?? rawObj.marketGaps).map(String),
+      syncedAt: (rawObj.last_synced_at ?? rawObj.lastSyncedAt ?? rawObj.synced_at ?? rawObj.syncedAt ?? null) as string | null,
+    };
+  }
+
   async getBusinessProfileForm() {
     const payload = await this.get("/business/profile");
     return this.parse(
@@ -457,8 +548,63 @@ export class HttpApi implements MarketingApi {
     throw unsupported("Campaign updates", "The backend has no PATCH /campaigns/{id} endpoint yet.");
   }
 
-  async generateStrategy(): Promise<never> {
-    throw unsupported("Campaign strategy generation", "Use the assistant: it routes to Omar's campaign_strategy task.");
+  async generateStrategy(input: GenerateStrategyInput): Promise<CampaignStrategy> {
+    const raw = await this.post("/campaigns/generate-strategy", {
+      objective: input.objective,
+      daily_budget: input.dailyBudget,
+      audience: input.audience ?? {},
+      brief: input.brief ?? "",
+    });
+
+    const phases = asArray(raw.phases).map((p) => {
+      const pObj = isRecord(p) ? p : {};
+      return {
+        name: String(pObj.name ?? "Phase"),
+        durationDays: Number(pObj.duration_days ?? pObj.durationDays ?? 14),
+        focus: String(pObj.focus ?? "Execution"),
+      };
+    });
+    const kpis = asArray(raw.kpis).map((k) => {
+      const kObj = isRecord(k) ? k : {};
+      return {
+        metric: String(kObj.metric ?? "Conversions"),
+        target: Number(kObj.target ? String(kObj.target).replace(/[^0-9.]/g, "") : 100) || 100,
+      };
+    });
+    const rawChannels = asArray(raw.recommended_channels ?? raw.recommendedChannels ?? ["facebook", "instagram"]);
+    const validChannels: ("facebook" | "instagram" | "messenger" | "audience_network")[] = [];
+    for (const c of rawChannels) {
+      const lower = String(c).toLowerCase();
+      if (lower.includes("insta")) validChannels.push("instagram");
+      else if (lower.includes("face")) validChannels.push("facebook");
+      else if (lower.includes("mess")) validChannels.push("messenger");
+      else if (lower.includes("aud")) validChannels.push("audience_network");
+      else validChannels.push("facebook");
+    }
+    const channels: ("facebook" | "instagram" | "messenger" | "audience_network")[] =
+      validChannels.length > 0
+        ? (Array.from(new Set(validChannels)) as ("facebook" | "instagram" | "messenger" | "audience_network")[])
+        : ["facebook", "instagram"];
+
+    const mapped: CampaignStrategy = {
+      summary: String(raw.tagline ?? raw.name ?? input.brief ?? "Integrated performance marketing strategy"),
+      keyMessages: asArray(raw.messaging_pillars ?? raw.messagingPillars ?? raw.creative_angles ?? raw.creativeAngles).map(String),
+      channels,
+      placements: ["Feed", "Stories", "Reels"],
+      biddingStrategy: "lowest_cost",
+      phases: phases.length > 0 ? phases : [
+        { name: "Awareness & Discovery", durationDays: 7, focus: "Audience reach & video views" },
+        { name: "Conversion & Scale", durationDays: 14, focus: "Direct sales & lead generation" },
+      ],
+      kpis: kpis.length > 0 ? kpis : [
+        { metric: "CTR", target: 2.5 },
+        { metric: "ROAS", target: 3.5 },
+      ],
+    };
+    if (mapped.keyMessages.length === 0) {
+      mapped.keyMessages = ["High-converting product value proposition", "Limited-time introductory discount"];
+    }
+    return this.parse(CampaignStrategySchema, mapped, "/campaigns/generate-strategy");
   }
 
   async getCampaignPerformance(): Promise<never> {

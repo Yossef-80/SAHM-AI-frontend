@@ -6,6 +6,7 @@ import { qk } from "@/lib/query-keys";
 import type {
   AnalyzeReferenceInput,
   AuditFilters,
+  BrandIdentityUpdateRequest,
   BusinessProfileUpdateInput,
   CampaignDraft,
   ConnectorUpdateInput,
@@ -28,6 +29,30 @@ import type {
 /* Business */
 export const useBusiness = () => useQuery({ queryKey: qk.business, queryFn: () => api.getBusiness() });
 export const useBrandProfile = () => useQuery({ queryKey: qk.brand, queryFn: () => api.getBrandProfile() });
+export const useBrandIdentity = () =>
+  useQuery({ queryKey: qk.brandIdentity, queryFn: () => api.getBrandIdentity(), staleTime: 60_000 });
+export const useSyncBrandIdentity = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.syncBrandIdentity(),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.brandIdentity, data);
+      qc.invalidateQueries({ queryKey: qk.business });
+      qc.invalidateQueries({ queryKey: qk.brand });
+    },
+  });
+};
+export const useUpdateBrandIdentity = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: BrandIdentityUpdateRequest) => api.updateBrandIdentity(patch),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.brandIdentity, data);
+      qc.invalidateQueries({ queryKey: qk.business });
+      qc.invalidateQueries({ queryKey: qk.brand });
+    },
+  });
+};
 
 /* Campaigns */
 export const useCampaigns = (input?: ListCampaignsInput) =>

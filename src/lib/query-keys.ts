@@ -2,6 +2,7 @@
 export const qk = {
   business: ["business"] as const,
   brand: ["brand"] as const,
+  brandIdentity: ["brand", "identity"] as const,
   campaigns: (filters?: Record<string, unknown>) => ["campaigns", filters ?? {}] as const,
   campaign: (id: string) => ["campaign", id] as const,
   campaignPerformance: (id: string) => ["campaign", id, "performance"] as const,

@@ -239,6 +239,7 @@ export const ActionTypeSchema = z.enum([
   "GENERATE_TEXT",
   "UPDATE_AGENT",
   "UPDATE_BRAND_PROFILE",
+  "VIEW_USAGE",
 ]);
 export type ActionType = z.infer<typeof ActionTypeSchema>;
 
@@ -1257,3 +1258,71 @@ export function checkPasswordPolicy(password: string): PasswordProblem | null {
   if (password.trim() !== password) return "whitespace";
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Comprehensive Brand Identity                                        */
+/* ------------------------------------------------------------------ */
+
+export const ColorPaletteSchema = z.object({
+  primary: z.string().default("#2563EB"),
+  secondary: z.string().default("#1E293B"),
+  accent: z.string().default("#F59E0B"),
+  background: z.string().default("#F8FAFC"),
+  text: z.string().default("#0F172A"),
+  palette: z.array(z.string()).default([]),
+});
+export type ColorPalette = z.infer<typeof ColorPaletteSchema>;
+
+export const SWOTAnalysisSchema = z.object({
+  strengths: z.array(z.string()).default([]),
+  weaknesses: z.array(z.string()).default([]),
+  opportunities: z.array(z.string()).default([]),
+  threats: z.array(z.string()).default([]),
+});
+export type SWOTAnalysis = z.infer<typeof SWOTAnalysisSchema>;
+
+export const IdentityEssenceSchema = z.object({
+  tagline: z.string().nullable().optional().default(""),
+  mission: z.string().nullable().optional().default(""),
+  vision: z.string().nullable().optional().default(""),
+  brandVoice: z.string().nullable().optional().default(""),
+  toneKeywords: z.array(z.string()).default([]),
+  archetype: z.string().nullable().optional(),
+});
+export type IdentityEssence = z.infer<typeof IdentityEssenceSchema>;
+
+export const TargetAudienceProfileSchema = z.object({
+  summary: z.string().nullable().optional().default(""),
+  demographics: z.string().nullable().optional().default(""),
+  painPoints: z.array(z.string()).default([]),
+  goals: z.array(z.string()).default([]),
+});
+export type TargetAudienceProfile = z.infer<typeof TargetAudienceProfileSchema>;
+
+export const BrandIdentityResponseSchema = z.object({
+  businessId: z.string(),
+  brandName: z.string(),
+  industry: z.string(),
+  palette: ColorPaletteSchema,
+  essence: IdentityEssenceSchema,
+  targetAudience: TargetAudienceProfileSchema,
+  swot: SWOTAnalysisSchema,
+  keyOffers: z.array(z.string()).default([]),
+  competitors: z.array(z.string()).default([]),
+  marketGaps: z.array(z.string()).default([]),
+  syncedAt: z.string().nullable().optional(),
+});
+export type BrandIdentityResponse = z.infer<typeof BrandIdentityResponseSchema>;
+
+export type BrandIdentityUpdateRequest = Partial<{
+  brandName: string;
+  industry: string;
+  palette: Partial<ColorPalette>;
+  essence: Partial<IdentityEssence>;
+  targetAudience: Partial<TargetAudienceProfile>;
+  swot: Partial<SWOTAnalysis>;
+  keyOffers: string[];
+  competitors: string[];
+  marketGaps: string[];
+}>;
+

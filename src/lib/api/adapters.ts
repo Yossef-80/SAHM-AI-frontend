@@ -570,8 +570,11 @@ export function mapBlock(raw: unknown): AnyBlock | null {
       const title = str(raw.title || raw.label, "Suggested next step");
       const desc = nullableStr(raw.description) ?? undefined;
 
+      const isUsageAction = (s: string) =>
+        /usage|quota|token|استهلاك|حصة|كوتا|توكن/i.test(s);
+
       const isBrandAction = (s: string) =>
-        /brand|profile|name|setting|identity|تسمية|اسم|إعدادات|هوية/i.test(s);
+        /brand|identity|تسمية|هوية|براند/i.test(s);
 
       const rawActions = asArray(raw.actions);
       let actions: ActionCardBlock["actions"] = [];
@@ -583,14 +586,16 @@ export function mapBlock(raw: unknown): AnyBlock | null {
           const actPayload = isRecord(act.payload) ? act.payload : {};
 
           let resolvedType: ActionType = "CREATE_CAMPAIGN";
-          if (actType === "UPDATE_BRAND_PROFILE" || isBrandAction(actType) || isBrandAction(actLabel) || isBrandAction(title)) {
+          if (actType === "VIEW_USAGE" || isUsageAction(actType) || isUsageAction(actLabel) || isUsageAction(title)) {
+            resolvedType = "VIEW_USAGE";
+          } else if (actType === "UPDATE_BRAND_PROFILE" || isBrandAction(actType) || isBrandAction(actLabel) || isBrandAction(title)) {
             resolvedType = "UPDATE_BRAND_PROFILE";
           } else if (TASK_TYPE_MAP[actType]) {
             resolvedType = TASK_TYPE_MAP[actType] as ActionType;
           } else if (TASK_TYPE_MAP[taskName]) {
             resolvedType = TASK_TYPE_MAP[taskName] as ActionType;
           } else if (actType && actType !== "CREATE_CAMPAIGN") {
-            resolvedType = (ActionTypeSchema.safeParse(actType).success ? actType : "UPDATE_BRAND_PROFILE") as ActionType;
+            resolvedType = (ActionTypeSchema.safeParse(actType).success ? actType : "CREATE_CAMPAIGN") as ActionType;
           }
 
           return {
@@ -600,15 +605,18 @@ export function mapBlock(raw: unknown): AnyBlock | null {
           };
         });
       } else {
+        const isUsage = isUsageAction(actionType) || isUsageAction(taskName) || isUsageAction(title) || isUsageAction(str(raw.label));
         const isBrand = isBrandAction(actionType) || isBrandAction(taskName) || isBrandAction(title) || isBrandAction(str(raw.label));
-        const resolvedType: ActionType = isBrand
+        const resolvedType: ActionType = isUsage
+          ? "VIEW_USAGE"
+          : isBrand
           ? "UPDATE_BRAND_PROFILE"
           : (((taskName ? TASK_TYPE_MAP[taskName] : undefined) ?? (actionType ? TASK_TYPE_MAP[actionType] : undefined) ?? "CREATE_CAMPAIGN") as ActionType);
 
         actions = [
           {
             type: resolvedType,
-            label: str(raw.label, isBrand ? "Manage Brand Profile" : "Run"),
+            label: str(raw.label, isUsage ? "عرض الاستهلاك" : isBrand ? "Manage Brand Profile" : "Run"),
             payload: { ...payload, ...inputs, task: taskName },
           },
         ];
@@ -720,11 +728,11 @@ export function sortMessagesChronologically(messages: Message[]): Message[] {
 
     if (validA && validB) {
       const diff = timeA - timeB;
-      // If timestamps differ by more than 60s, respect macro chronological order
-      if (Math.abs(diff) > 60_000) {
+      // If timestamps differ by more than 500ms, strictly respect chronological order
+      if (Math.abs(diff) > 500) {
         return diff;
       }
-      // Within the same conversational turn (within 60s window or clock skew):
+      // Within the same conversational turn (exact tie or sub-500ms clock skew):
       // A user query MUST ALWAYS precede an assistant response
       if (a.role === "user" && b.role !== "user") return -1;
       if (a.role !== "user" && b.role === "user") return 1;

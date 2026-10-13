@@ -6,6 +6,7 @@ import {
   AtSign,
   BarChart3,
   Bot,
+  Building2,
   CalendarDays,
   CheckCheck,
   Compass,
@@ -17,6 +18,7 @@ import {
   KeyRound,
   Star,
   FolderPlus,
+  Gauge,
   Layers,
   Loader2,
   Megaphone,
@@ -35,6 +37,7 @@ import { getActionDefinition } from "@/lib/actions/registry";
 const ICONS: Record<string, LucideIcon> = {
   AtSign,
   Bot,
+  Building2,
   CalendarDays,
   Compass,
   Crosshair,
@@ -47,6 +50,7 @@ const ICONS: Record<string, LucideIcon> = {
   BarChart3,
   CheckCheck,
   FolderPlus,
+  Gauge,
   Layers,
   Megaphone,
   Pencil,
@@ -76,8 +80,8 @@ export const ActionButton = forwardRef<HTMLButtonElement, Props>(function Action
   const t = useTranslations("actions");
   const { dispatch, isPending } = useAction();
   const def = getActionDefinition(action.type);
-  const Icon = ICONS[def.icon];
-  const text = children ?? label ?? ("label" in action && action.label ? action.label : t(def.labelKey));
+  const Icon = def ? ICONS[def.icon] : null;
+  const text = children ?? label ?? ("label" in action && action.label ? action.label : def ? t(def.labelKey) : action.type);
 
   return (
     <Button

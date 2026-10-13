@@ -8,6 +8,7 @@ import {
   Megaphone,
   Image as ImageIcon,
   Lightbulb,
+  Palette,
   Plug,
   ScrollText,
   Search,
@@ -19,6 +20,7 @@ export type NavItem = {
   href: string;
   key:
     | "home"
+    | "brandIdentity"
     | "assistant"
     | "research"
     | "campaigns"
@@ -39,6 +41,7 @@ export type NavItem = {
 
 export const primaryNav: NavItem[] = [
   { href: "/", key: "home", icon: Home },
+  { href: "/brand-identity", key: "brandIdentity", icon: Palette },
   { href: "/assistant", key: "assistant", icon: MessageSquare },
   { href: "/research", key: "research", icon: Search },
   { href: "/campaigns", key: "campaigns", icon: Megaphone },
@@ -59,6 +62,12 @@ export const secondaryNav: NavItem[] = [
 ];
 
 /** Bottom bar on mobile keeps 5 items; the rest are reachable from the sheet menu / home. */
-export const mobileNav: NavItem[] = primaryNav.filter((i) => ["home", "assistant", "campaigns", "creatives", "insights"].includes(i.key));
+export const mobileNav: NavItem[] = [
+  { href: "/", key: "home", icon: Home },
+  { href: "/brand-identity", key: "brandIdentity", icon: Palette },
+  { href: "/assistant", key: "assistant", icon: MessageSquare },
+  { href: "/campaigns", key: "campaigns", icon: Megaphone },
+  { href: "/calendar", key: "calendar", icon: CalendarDays },
+];
 
 export const isActivePath = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));

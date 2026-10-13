@@ -402,8 +402,20 @@ export const actionRegistry = {
     }).passthrough(),
     requiresConfirmation: false,
     async handler(payload, ctx) {
-      ctx.navigate("/settings");
-      return { ok: true, navigateTo: "/settings" };
+      ctx.navigate("/brand-identity");
+      return { ok: true, navigateTo: "/brand-identity" };
+    },
+  }),
+
+  VIEW_USAGE: define({
+    type: "VIEW_USAGE",
+    labelKey: "VIEW_USAGE",
+    icon: "Gauge",
+    payloadSchema: z.object({}).passthrough(),
+    requiresConfirmation: false,
+    async handler(payload, ctx) {
+      ctx.navigate("/settings/usage");
+      return { ok: true, navigateTo: "/settings/usage" };
     },
   }),
 };

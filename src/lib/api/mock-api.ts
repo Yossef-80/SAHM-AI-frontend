@@ -9,6 +9,8 @@ import type {
   AuditFilters,
   AuditList,
   AuthSession,
+  BrandIdentityResponse,
+  BrandIdentityUpdateRequest,
   BusinessProfileForm,
   BusinessProfileUpdateInput,
   Campaign,
@@ -168,6 +170,7 @@ const TASK_STEPS: Record<ActionType, string[]> = {
   GENERATE_TEXT: ["Read brand voice", "Draft", "Polish"],
   UPDATE_AGENT: ["Save"],
   UPDATE_BRAND_PROFILE: ["Load profile", "Apply changes", "Sync memory"],
+  VIEW_USAGE: ["Fetch usage ledger", "Calculate burn rate", "Project tokens"],
 };
 
 const taskCallbacks: Record<string, (task: AgentTask) => void> = {};
@@ -545,6 +548,96 @@ export class MockApi implements MarketingApi {
   async getBrandProfile() {
     await simulate({ safe: true });
     return clone(fx.brandProfile);
+  }
+
+  private brandIdentityState: BrandIdentityResponse = {
+    businessId: fx.business.id,
+    brandName: fx.business.name || "Nile Roastery & Co.",
+    industry: fx.business.industry || "Specialty Coffee & Beverages",
+    palette: {
+      primary: "#2563EB",
+      secondary: "#0F172A",
+      accent: "#F59E0B",
+      background: "#F8FAFC",
+      text: "#0F172A",
+      palette: ["#2563EB", "#1D4ED8", "#0F172A", "#334155", "#F59E0B"],
+    },
+    essence: {
+      tagline: "Roasted This Week · Crafted for Peak Freshness",
+      mission: "To deliver artisanal, transparently sourced specialty beans and bottled cold brew within 24 hours of roasting.",
+      vision: "To become the premier direct-to-consumer specialty beverage brand in Egypt and the MENA region.",
+      brandVoice: "Authentic, energetic, friendly, and expert without being snobbish.",
+      toneKeywords: ["Fresh", "Artisanal", "Direct", "Passionate", "Reliable"],
+      archetype: "The Craftsman & Explorer",
+    },
+    targetAudience: {
+      summary: "Urban professionals, remote creatives, and coffee enthusiasts seeking fresher alternatives to supermarket mass coffee.",
+      demographics: "Ages 22–45, urban Cairo / Giza / Alexandria, middle to upper-middle disposable income.",
+      painPoints: ["Stale supermarket coffee with no roast dates", "Complicated home brewing gear", "Slow 3-5 day delivery times"],
+      goals: ["Guaranteed freshness delivered within 24h", "Ready-to-drink options for offices and on-the-go", "Transparent origin stories"],
+    },
+    swot: {
+      strengths: [
+        "Roast-on-demand freshness guarantee with visible roast dates",
+        "Proprietary 18-hour cold brew extraction technique",
+        "Passionate community and fast Cairo fulfillment",
+      ],
+      weaknesses: [
+        "Limited physical retail footprint compared to legacy international chains",
+        "Higher cost of imported Ethiopian & Colombian green beans",
+      ],
+      opportunities: [
+        "Corporate office RTD subscription packages",
+        "Arabic-first lifestyle video content on Instagram Reels & TikTok",
+        "Collaborative drops with local bakeries and co-working spaces",
+      ],
+      threats: [
+        "Currency exchange volatility impacting bean import costs",
+        "Aggressive discount promos by mass commercial brands",
+      ],
+    },
+    keyOffers: [
+      "Signature Nile Reserve Beans (250g / 1kg)",
+      "Single-Origin Ethiopian Cold Brew (6-Pack Bottles)",
+      "Office Weekly Refill Subscription (20% Savings)",
+    ],
+    competitors: [
+      "Brew & Co",
+      "Frost Coffee",
+      "Cairo Commercial Brands",
+    ],
+    marketGaps: [
+      "Same-day Cairo delivery with roast date printed on every batch",
+      "Arabic-first educational and entertainment short-form content",
+    ],
+    syncedAt: new Date().toISOString(),
+  };
+
+  async getBrandIdentity(): Promise<BrandIdentityResponse> {
+    await simulate({ safe: true });
+    return clone(this.brandIdentityState);
+  }
+
+  async syncBrandIdentity(): Promise<BrandIdentityResponse> {
+    await sleep(1200);
+    await simulate();
+    this.brandIdentityState.syncedAt = new Date().toISOString();
+    return clone(this.brandIdentityState);
+  }
+
+  async updateBrandIdentity(patch: BrandIdentityUpdateRequest): Promise<BrandIdentityResponse> {
+    await simulate();
+    if (patch.brandName) this.brandIdentityState.brandName = patch.brandName;
+    if (patch.industry) this.brandIdentityState.industry = patch.industry;
+    if (patch.palette) Object.assign(this.brandIdentityState.palette, patch.palette);
+    if (patch.essence) Object.assign(this.brandIdentityState.essence, patch.essence);
+    if (patch.targetAudience) Object.assign(this.brandIdentityState.targetAudience, patch.targetAudience);
+    if (patch.swot) Object.assign(this.brandIdentityState.swot, patch.swot);
+    if (patch.keyOffers) this.brandIdentityState.keyOffers = patch.keyOffers;
+    if (patch.competitors) this.brandIdentityState.competitors = patch.competitors;
+    if (patch.marketGaps) this.brandIdentityState.marketGaps = patch.marketGaps;
+    this.brandIdentityState.syncedAt = new Date().toISOString();
+    return clone(this.brandIdentityState);
   }
 
   /* Campaigns */

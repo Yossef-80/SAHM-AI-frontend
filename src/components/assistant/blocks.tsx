@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, ExternalLink, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
@@ -122,13 +123,25 @@ export function safeDecodeURI(uri: string): string {
 
 export function renderInline(text: string): ReactNode[] {
   const cleanText = unescapeUnicode(text);
-  const parts = cleanText.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<]+[^<.,:;"')\]\s]|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g);
+  const parts = cleanText.split(/(\[[^\]]+\]\((?:https?:\/\/[^\s)]+|\/[^\s)]*)\)|https?:\/\/[^\s<]+[^<.,:;"')\]\s]|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g);
   return parts.map((p, i) => {
-    const link = p.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    const link = p.match(/^\[([^\]]+)\]\(((?:https?:\/\/[^\s)]+|\/[^\s)]*))\)$/);
     if (link) {
+      const [, label, href] = link;
+      if (href.startsWith("/")) {
+        return (
+          <Link
+            key={i}
+            href={href}
+            className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-2 hover:opacity-85"
+          >
+            {label}
+          </Link>
+        );
+      }
       return (
-        <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:opacity-85">
-          {link[1]}
+        <a key={i} href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:opacity-85">
+          {label}
         </a>
       );
     }

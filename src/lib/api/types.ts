@@ -36,6 +36,8 @@ import type {
   AnalyzeReferenceInput,
   Audience,
   ApplyRecommendationInput,
+  BrandIdentityResponse,
+  BrandIdentityUpdateRequest,
   BrandProfile,
   Business,
   Campaign,
@@ -93,6 +95,10 @@ export interface MarketingApi {
   /* Business & brand */
   getBusiness(): Promise<Business>;
   getBrandProfile(): Promise<BrandProfile>;
+  /** Comprehensive Brand Identity & Strategy Profile */
+  getBrandIdentity(): Promise<BrandIdentityResponse>;
+  syncBrandIdentity(): Promise<BrandIdentityResponse>;
+  updateBrandIdentity(patch: BrandIdentityUpdateRequest): Promise<BrandIdentityResponse>;
   /** Exclude-unset patch: omitted keys are left alone, `null` clears. */
   getBusinessProfileForm(): Promise<BusinessProfileForm>;
   updateBusinessProfile(input: BusinessProfileUpdateInput): Promise<BusinessProfileForm>;
