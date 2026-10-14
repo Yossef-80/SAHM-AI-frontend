@@ -199,32 +199,40 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
         </div>
         <div className="border-t bg-background p-3 md:p-4">
           <div className="mx-auto max-w-3xl">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">{t("talkingTo")}</span>
-              <Select
-                value={effectivePersonaId ?? AUTO_PERSONA}
-                onValueChange={setPersonaId}
-              >
-                <SelectTrigger className="h-8 w-auto min-w-40 gap-1 text-xs" aria-label={t("talkingTo")}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={AUTO_PERSONA}>{t("agentAuto")}</SelectItem>
-                  {(agents.data ?? []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      <span className="me-1.5" aria-hidden>{a.emoji}</span>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <Composer
               onSend={onSend}
               onStop={stop}
               disabled={!!isStreaming}
               mode={creativeMode}
               onModeChange={setCreativeMode}
+              /*
+               * "Who you are talking to" sits *beside* the request-type choices,
+               * inside the composer row — not in its own band above the composer,
+               * where it pushed the chips and the text box down for a single
+               * rarely-changed control.
+               */
+              toolbar={
+                <>
+                  <span className="text-xs text-muted-foreground">{t("talkingTo")}</span>
+                  <Select
+                    value={effectivePersonaId ?? AUTO_PERSONA}
+                    onValueChange={setPersonaId}
+                  >
+                    <SelectTrigger className="h-8 w-auto min-w-40 gap-1 text-xs" aria-label={t("talkingTo")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={AUTO_PERSONA}>{t("agentAuto")}</SelectItem>
+                      {(agents.data ?? []).map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          <span className="me-1.5" aria-hidden>{a.emoji}</span>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              }
             />
           </div>
         </div>

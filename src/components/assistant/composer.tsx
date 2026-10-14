@@ -1,14 +1,22 @@
-import { useState, useRef, useMemo, type FormEvent, type KeyboardEvent, type ChangeEvent } from "react";
+import {
+  useState,
+  useRef,
+  useMemo,
+  type FormEvent,
+  type KeyboardEvent,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import { useTranslations } from "next-intl";
 import { ArrowUp, Compass, Crosshair, Globe, ImagePlus, Loader2, MessageSquare, Palette, Sparkles, Square, Star, Wand } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useAnalyzeReference, useMemoryItems } from "@/hooks/use-api";
+import { useCreativeReferences, useMemoryItems, useUploadChatAttachment } from "@/hooks/use-api";
 import { useAssistantStore } from "@/store/assistant-store";
 import { ContextChips } from "./context-chips";
 
 interface MentionItem {
-  type: "competitor" | "tool";
+  type: "competitor" | "tool" | "reference";
   id: string;
   name: string;
   desc: string;
@@ -63,12 +71,15 @@ export function Composer({
   disabled,
   mode,
   onModeChange,
+  toolbar,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
   disabled: boolean;
   mode: CreativeMode;
   onModeChange: (mode: CreativeMode) => void;
+  /** Extra control rendered in the same row as the mode picker (the "talking to" selector). */
+  toolbar?: ReactNode;
 }) {
   const t = useTranslations("assistant");
   const [value, setValue] = useState("");
@@ -81,6 +92,7 @@ export function Composer({
   const [mentionIndex, setMentionIndex] = useState(0);
 
   const memoryItems = useMemoryItems({ kind: "competitor_note" });
+  const savedReferences = useCreativeReferences();
 
   const competitors = useMemo<MentionItem[]>(() => {
     const items = memoryItems.data?.items ?? [];
@@ -97,21 +109,41 @@ export function Composer({
           type: "competitor",
           id: item.id,
           name: cleanName,
-          desc: "منافس مسجل في الذاكرة",
+          desc: t("mentionCompetitorDesc"),
           icon: Crosshair,
         });
       }
     }
     return list;
-  }, [memoryItems.data]);
+  }, [memoryItems.data, t]);
+
+  /**
+   * Analyzed references the user saved from the Creatives tab.
+   *
+   * These are the "@" targets that hand Layla a picture to work from. Mentioning
+   * one attaches it as a reference chip; it never re-runs the analysis (the
+   * analysis already happened when the user pressed "Start" in the library).
+   */
+  const references = useMemo<MentionItem[]>(
+    () =>
+      (savedReferences.data ?? []).map((reference) => ({
+        type: "reference" as const,
+        id: reference.id,
+        name: reference.sourceName,
+        desc: reference.summary || t("mentionReferenceDesc"),
+        icon: ImagePlus,
+      })),
+    [savedReferences.data, t],
+  );
 
   const filteredMentions = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
+    const matchedReferences = references.filter((r) => r.name.toLowerCase().includes(q));
     const matchedCompetitors = competitors.filter((c) => c.name.toLowerCase().includes(q));
     const matchedTools = TOOLS_MENTIONS.filter((tool) => tool.name.toLowerCase().includes(q) || tool.desc.toLowerCase().includes(q));
-    return [...matchedCompetitors, ...matchedTools];
-  }, [mentionQuery, competitors]);
+    return [...matchedReferences, ...matchedCompetitors, ...matchedTools];
+  }, [mentionQuery, competitors, references]);
 
   const handleSelectMention = (item: MentionItem) => {
     if (!textareaRef.current) return;
@@ -122,15 +154,18 @@ export function Composer({
     const lastAtPos = textBefore.lastIndexOf("@");
     if (lastAtPos === -1) return;
 
-    const mentionText = item.type === "competitor" ? `@${item.name} ` : `@${item.name} `;
+    const mentionText = `@${item.name} `;
     const newText = textBefore.slice(0, lastAtPos) + mentionText + textAfter;
     setValue(newText);
     setMentionQuery(null);
     setMentionIndex(0);
 
-    // If a competitor was mentioned, attach it as context chip for explicit context
+    // Competitors and analyzed references both become explicit context chips so
+    // the backend receives a stable id instead of having to re-parse the text.
     if (item.type === "competitor") {
       addContext({ kind: "competitor", id: item.id, label: item.name });
+    } else if (item.type === "reference") {
+      addContext({ kind: "reference", id: item.id, label: item.name });
     }
 
     // Set cursor position after the inserted mention
@@ -158,14 +193,22 @@ export function Composer({
   };
 
   const [uploadError, setUploadError] = useState("");
-  const [referenceStatus, setReferenceStatus] = useState("");
+  const [attachmentStatus, setAttachmentStatus] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const analyze = useAnalyzeReference();
+  const upload = useUploadChatAttachment();
 
-  const uploadReference = (file: File | undefined) => {
+  /**
+   * Attach a photo to the next message.
+   *
+   * This is intentionally *not* `analyzeReference`: uploading a picture must not
+   * run the photo-analysis tool, must not switch the composer to a creative
+   * mode, and must not move the user to another tab. The image simply travels
+   * with the message and the selected model sees it (or says it cannot).
+   */
+  const attachImage = (file: File | undefined) => {
     if (!file) return;
     setUploadError("");
-    setReferenceStatus("");
+    setAttachmentStatus("");
     if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
       setUploadError(t("referenceUnsupported"));
       return;
@@ -177,22 +220,18 @@ export function Composer({
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const result = await analyze.mutateAsync({
+        const stored = await upload.mutateAsync({
           source: String(reader.result ?? ""),
           fileName: file.name,
-          kind: "image",
+          mime: file.type,
         });
-        if (result.status === "unavailable" || !result.id || result.id === "ref_unknown") {
-          setUploadError(result.unavailableReason || t("referenceAnalysisUnavailable"));
-          return;
-        }
-        addContext({ kind: "reference", id: result.id, label: result.sourceName || file.name });
-        setReferenceStatus(t("referenceReady"));
+        addContext({ kind: "attachment", id: stored.id, label: stored.name || file.name });
+        setAttachmentStatus(t("attachmentReady"));
       } catch {
-        setUploadError(t("referenceUploadFailed"));
+        setUploadError(t("attachmentUploadFailed"));
       }
     };
-    reader.onerror = () => setUploadError(t("referenceUploadFailed"));
+    reader.onerror = () => setUploadError(t("attachmentUploadFailed"));
     reader.readAsDataURL(file);
   };
 
@@ -201,11 +240,13 @@ export function Composer({
     e?.stopPropagation();
     const text = value.trim();
     const now = Date.now();
-    if (!text || disabled || analyze.isPending || now - lastSubmitTimeRef.current < 600) return;
+    // Only the upload itself blocks sending; an in-flight analysis no longer does,
+    // because there is no analysis on attach any more.
+    if (!text || disabled || upload.isPending || now - lastSubmitTimeRef.current < 600) return;
     lastSubmitTimeRef.current = now;
     setValue("");
     setMentionQuery(null);
-    setReferenceStatus("");
+    setAttachmentStatus("");
     onSend(text);
   };
 
@@ -245,7 +286,7 @@ export function Composer({
       {mentionQuery !== null && filteredMentions.length > 0 && (
         <div className="absolute bottom-full start-3 mb-2 w-72 sm:w-80 max-h-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg z-50 animate-in fade-in-50 slide-in-from-bottom-2">
           <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-            المنافسين والأدوات (@ Mention)
+            {t("mentionTitle")}
           </div>
           <div className="space-y-0.5">
             {filteredMentions.map((item, idx) => {
@@ -264,7 +305,13 @@ export function Composer({
                     isSelected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-muted/60"
                   }`}
                 >
-                  <div className={`p-1 rounded ${item.type === "competitor" ? "bg-rose-500/10 text-rose-500" : "bg-primary/10 text-primary"}`}>
+                  <div className={`p-1 rounded ${
+                    item.type === "competitor"
+                      ? "bg-rose-500/10 text-rose-500"
+                      : item.type === "reference"
+                        ? "bg-amber-500/10 text-amber-600"
+                        : "bg-primary/10 text-primary"
+                  }`}>
                     <Icon className="h-3.5 w-3.5" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -278,27 +325,30 @@ export function Composer({
         </div>
       )}
       <ContextChips />
-      <div
-        role="radiogroup"
-        aria-label={t("modeGroup")}
-        className="flex flex-wrap gap-1.5"
-      >
-        {MODES.map(({ id, icon: Icon }) => (
-          <Button
-            key={id}
-            type="button"
-            size="sm"
-            variant={mode === id ? "default" : "outline"}
-            role="radio"
-            aria-checked={mode === id}
-            onClick={() => onModeChange(id)}
-            title={t(`mode.${id}.hint`)}
-            className="gap-1.5"
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {t(`mode.${id}.label`)}
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="radiogroup"
+          aria-label={t("modeGroup")}
+          className="flex flex-wrap gap-1.5"
+        >
+          {MODES.map(({ id, icon: Icon }) => (
+            <Button
+              key={id}
+              type="button"
+              size="sm"
+              variant={mode === id ? "default" : "outline"}
+              role="radio"
+              aria-checked={mode === id}
+              onClick={() => onModeChange(id)}
+              title={t(`mode.${id}.hint`)}
+              className="gap-1.5"
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {t(`mode.${id}.label`)}
+            </Button>
+          ))}
+        </div>
+        {toolbar && <div className="ms-auto flex items-center gap-2">{toolbar}</div>}
       </div>
       <p className="text-xs text-muted-foreground">{t(`mode.${mode}.hint`)}</p>
       <input
@@ -307,7 +357,7 @@ export function Composer({
         accept="image/png,image/jpeg,image/webp"
         className="hidden"
         onChange={(event) => {
-          uploadReference(event.target.files?.[0]);
+          attachImage(event.target.files?.[0]);
           event.currentTarget.value = "";
         }}
       />
@@ -316,12 +366,12 @@ export function Composer({
           type="button"
           variant="outline"
           size="icon"
-          disabled={disabled || analyze.isPending}
+          disabled={disabled || upload.isPending}
           onClick={() => fileRef.current?.click()}
-          aria-label={t("uploadReference")}
-          title={t("uploadReference")}
+          aria-label={t("attachImage")}
+          title={t("attachImage")}
         >
-          {analyze.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+          {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
         </Button>
         <Textarea
           ref={textareaRef}
@@ -339,13 +389,13 @@ export function Composer({
             <Square className="h-4 w-4" />
           </Button>
         ) : (
-          <Button type="submit" size="icon" disabled={!value.trim() || disabled || analyze.isPending} aria-label={t("send")}>
+          <Button type="submit" size="icon" disabled={!value.trim() || disabled || upload.isPending} aria-label={t("send")}>
             <ArrowUp className="h-4 w-4" />
           </Button>
         )}
       </div>
-      {analyze.isPending && <p className="text-xs text-muted-foreground" role="status">{t("analyzingReference")}</p>}
-      {referenceStatus && <p className="text-xs text-emerald-700 dark:text-emerald-400" role="status">{referenceStatus}</p>}
+      {upload.isPending && <p className="text-xs text-muted-foreground" role="status">{t("uploadingAttachment")}</p>}
+      {attachmentStatus && <p className="text-xs text-emerald-700 dark:text-emerald-400" role="status">{attachmentStatus}</p>}
       {uploadError && <p className="text-xs text-destructive" role="alert">{uploadError}</p>}
     </form>
   );

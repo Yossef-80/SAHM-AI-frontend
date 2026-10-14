@@ -1,10 +1,13 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import type {
   AnalyzeReferenceInput,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
   AuditFilters,
   BrandIdentityUpdateRequest,
   BusinessProfileUpdateInput,
@@ -26,6 +29,7 @@ import type {
   UpdateMemoryItemInput,
   Settings,
   UsagePeriod,
+  TargetingCategory,
 } from "@/types";
 
 /* Business */
@@ -59,6 +63,16 @@ export const useUpdateBrandIdentity = () => {
 /* Campaigns */
 export const useCampaigns = (input?: ListCampaignsInput) =>
   useQuery({ queryKey: qk.campaigns(input), queryFn: () => api.listCampaigns(input), staleTime: 60_000 });
+export const useMetaAccountCampaigns = (search?: string) =>
+  useInfiniteQuery({
+    queryKey: qk.metaAccountCampaigns(search),
+    queryFn: ({ pageParam }) =>
+      api.listMetaAccountCampaigns({ search, limit: 50, after: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.nextCursor ?? undefined : undefined,
+    staleTime: 60_000,
+  });
 export const useCampaign = (id: string) =>
   useQuery({ queryKey: qk.campaign(id), queryFn: () => api.getCampaign(id), enabled: !!id, staleTime: 60_000 });
 export const useCampaignPerformance = (id: string) =>
@@ -68,7 +82,38 @@ export const useCampaignAdInsights = (id: string) =>
 export const useCampaignRecommendations = (id: string) =>
   useQuery({ queryKey: qk.campaignRecommendations(id), queryFn: () => api.getCampaignRecommendations(id), enabled: !!id });
 export const useAudience = (id: string | null) =>
-  useQuery({ queryKey: ["audience", id], queryFn: () => api.getAudience(id!), enabled: !!id });
+  useQuery({ queryKey: id ? qk.audience(id) : ["audience", "none"], queryFn: () => api.getAudience(id!), enabled: !!id });
+export const useAudiences = () =>
+  useQuery({ queryKey: qk.audiences, queryFn: () => api.listAudiences(), staleTime: 30_000 });
+export const useCreateAudience = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SavedAudienceInput) => api.createAudience(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.audiences }),
+  });
+};
+export const useUpdateAudience = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; patch: Partial<SavedAudienceInput> }) => api.updateAudience(input),
+    onSuccess: (audience) => {
+      qc.setQueryData(qk.audience(audience.id), audience);
+      qc.invalidateQueries({ queryKey: qk.audiences });
+    },
+  });
+};
+export const useArchiveAudience = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.archiveAudience(id),
+    onSuccess: (audience) => {
+      qc.setQueryData(qk.audience(audience.id), audience);
+      qc.invalidateQueries({ queryKey: qk.audiences });
+    },
+  });
+};
+export const useSuggestAudiences = () =>
+  useMutation({ mutationFn: (input: AudienceSuggestionInput) => api.suggestAudiences(input) });
 export const useCampaignLearnings = (id: string) =>
   useQuery({ queryKey: qk.campaignLearnings(id), queryFn: () => api.getCampaignLearnings(id), enabled: !!id });
 
@@ -143,6 +188,19 @@ export const useUpdateCreativeReference = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.creativeReferences }),
   });
 };
+/**
+ * Uploads an image for the next chat message.
+ *
+ * Separate from `useAnalyzeReference` on purpose: attaching a picture to a chat
+ * must not run the vision analysis, change the composer mode, or navigate. The
+ * returned id is added as a turn-scoped `attachment` chip.
+ */
+export const useUploadChatAttachment = () =>
+  useMutation({
+    mutationFn: (input: { source: string; fileName?: string; mime?: string }) =>
+      api.uploadChatAttachment(input),
+  });
+
 export const useAnalyzeReference = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -186,16 +244,29 @@ export const useTask = (id: string, enabled = true) =>
 
 /* Integrations */
 /**
- * Type-ahead lookup against Meta Targeting Search. Disabled until two characters
- * so a single keystroke does not spend a rate-limited Graph call.
+ * Category-aware lookup against Meta Targeting Search. Wait for typing to pause
+ * so every prefix does not trigger a rate-limited Graph request.
  */
-export const useMetaInterestSearch = (query: string) =>
-  useQuery({
-    queryKey: qk.metaInterestSearch(query.trim().toLowerCase()),
-    queryFn: () => api.searchMetaInterests(query.trim()),
-    enabled: query.trim().length >= 2,
+export const useMetaInterestSearch = (query: string, category: TargetingCategory) => {
+  const normalized = query.trim();
+  const [debouncedQuery, setDebouncedQuery] = useState(normalized);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(normalized), 450);
+    return () => clearTimeout(timer);
+  }, [normalized]);
+
+  const result = useQuery({
+    queryKey: qk.metaInterestSearch(category, debouncedQuery.toLowerCase()),
+    queryFn: () => api.searchMetaInterests(debouncedQuery, category),
+    enabled: debouncedQuery.length >= 2,
     staleTime: 5 * 60_000,
+    // An unavailable Meta lookup is already converted into an empty result by
+    // the backend; don't let React Query amplify a transient HTTP error.
+    retry: false,
   });
+  return { ...result, isDebouncing: normalized !== debouncedQuery };
+};
 
 export const useMetaConnection = () =>
   useQuery({

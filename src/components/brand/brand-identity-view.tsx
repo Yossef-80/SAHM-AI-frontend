@@ -127,6 +127,9 @@ export function BrandIdentityView() {
       audience: {
         name: brand.targetAudience.summary || `${brand.brandName} Core Audience`,
         locations: ["Cairo, EG", "Giza, EG", "Alexandria, EG"],
+        countries: ["EG"],
+        interestTargets: [],
+        targetingTargets: [],
         ageMin: 22,
         ageMax: 45,
         genders: ["all"],

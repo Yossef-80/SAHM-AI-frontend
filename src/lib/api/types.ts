@@ -35,6 +35,12 @@ import type {
   AssistantProgressEvent,
   AnalyzeReferenceInput,
   Audience,
+  SavedAudience,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
+  AudienceSuggestionResponse,
+  ChatAttachment,
+  ChatAttachmentUpload,
   ApplyRecommendationInput,
   BrandIdentityResponse,
   BrandIdentityUpdateRequest,
@@ -54,10 +60,13 @@ import type {
   Insight,
   Learning,
   ListCampaignsInput,
+  ListMetaAccountCampaignsInput,
+  MetaAccountCampaignPage,
   ListInsightsInput,
   Message,
   MetaConnection,
   MetaTargetingSearch,
+  TargetingCategory,
   MetaAdPlanSettings,
   MetaAdPlanCreated,
   MetaAdPlanActivationResponse,
@@ -114,6 +123,8 @@ export interface MarketingApi {
 
   /* Campaigns */
   listCampaigns(input?: ListCampaignsInput): Promise<Campaign[]>;
+  /** Read-only page of campaigns from the connected Meta ad account; never saved to Sahm. */
+  listMetaAccountCampaigns(input?: ListMetaAccountCampaignsInput): Promise<MetaAccountCampaignPage>;
   getCampaign(id: string): Promise<Campaign>;
   createCampaign(draft: CampaignDraft): Promise<Campaign>;
   /** Save local draft + pending Meta plan; no Meta writes occur. */
@@ -134,6 +145,11 @@ export interface MarketingApi {
   getCampaignRecommendations(id: string): Promise<Recommendation[]>;
   getCampaignLearnings(id: string): Promise<Learning[]>;
   getAudience(id: string): Promise<Audience>;
+  listAudiences(): Promise<SavedAudience[]>;
+  createAudience(input: SavedAudienceInput): Promise<SavedAudience>;
+  updateAudience(input: { id: string; patch: Partial<SavedAudienceInput> }): Promise<SavedAudience>;
+  archiveAudience(id: string): Promise<SavedAudience>;
+  suggestAudiences(input: AudienceSuggestionInput): Promise<AudienceSuggestionResponse>;
 
   /* Creatives */
   listCreatives(campaignId?: string): Promise<Creative[]>;
@@ -145,6 +161,12 @@ export interface MarketingApi {
   analyzeReference(input: AnalyzeReferenceInput): Promise<ReferenceAnalysis>;
   listCreativeReferences(): Promise<CreativeReference[]>;
   updateCreativeReference(input: { id: string; favorite: boolean }): Promise<CreativeReference>;
+  /**
+   * Store an image for the *next chat message*. Deliberately separate from
+   * `analyzeReference`: attaching a photo must not start Layla's creative
+   * workflow, switch the composer mode, or spend a vision call.
+   */
+  uploadChatAttachment(input: ChatAttachmentUpload): Promise<ChatAttachment>;
   addToCampaign(input: AddToCampaignInput): Promise<Campaign>;
 
   /* Insights & recommendations */
@@ -174,8 +196,8 @@ export interface MarketingApi {
 
   /* Integrations */
   getMetaConnection(): Promise<MetaConnection>;
-  /** Resolve an interest name to Meta IDs; targeting rejects plain names. */
-  searchMetaInterests(query: string): Promise<MetaTargetingSearch>;
+  /** Resolve a phrase in one Meta targeting category; names alone are never applied. */
+  searchMetaInterests(query: string, category: TargetingCategory): Promise<MetaTargetingSearch>;
   connectMeta(): Promise<MetaConnection>;
   reauthMeta(): Promise<MetaConnection>;
   disconnectMeta(): Promise<MetaConnection>;

@@ -278,6 +278,12 @@ const usageBase = {
   businessId: "biz_nile",
   calls: 1_284,
   budgetSource: "default",
+  estimatedCalls: 0,
+  // Demo data is unpriced on purpose: the real endpoint returns null until the
+  // workspace configures a token price, and the UI must handle exactly that.
+  estimatedCostUsd: null,
+  costPerMillionInUsd: 0,
+  costPerMillionOutUsd: 0,
 };
 
 export const mockUsage: Record<string, Usage> = {
@@ -306,6 +312,12 @@ export const mockUsage: Record<string, Usage> = {
       { key: "salma", tokens: 98_000, share: 0.1716 },
       { key: "karim", tokens: 59_000, share: 0.1033 },
     ],
+    byAction: [
+      { key: "chat.turn", tokens: 262_000, share: 0.4588 },
+      { key: "research.analyze_competitor", tokens: 171_000, share: 0.2995 },
+      { key: "creative.reference", tokens: 92_000, share: 0.1611 },
+      { key: "content.calendar", tokens: 46_000, share: 0.0806 },
+    ],
   },
   // Deliberately over budget: the UI has to render a 100%+ meter without clamping.
   month: {
@@ -332,6 +344,12 @@ export const mockUsage: Record<string, Usage> = {
       { key: "omar", tokens: 2_557_590, share: 0.3 },
       { key: "salma", tokens: 1_705_060, share: 0.2 },
       { key: "karim", tokens: 852_530, share: 0.1 },
+    ],
+    byAction: [
+      { key: "chat.turn", tokens: 3_903_000, share: 0.4579 },
+      { key: "research.analyze_competitor", tokens: 2_561_000, share: 0.3004 },
+      { key: "creative.image", tokens: 1_378_000, share: 0.1617 },
+      { key: "campaign.strategy", tokens: 683_300, share: 0.0802 },
     ],
   },
 };

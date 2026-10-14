@@ -21,15 +21,22 @@ import {
   useAssistMetaAdPlan,
   usePrepareMetaAdPlan,
   useMetaInterestSearch,
+  useAudiences,
+  useCreateAudience,
+  useUpdateAudience,
+  useArchiveAudience,
+  useSuggestAudiences,
   usePreviewMetaAdPlan,
   useConfirmMetaAdPlan,
   useActivateMetaAdPlan,
 } from "@/hooks/use-api";
 import { useUiStore } from "@/store/ui-store";
 import { formatCurrency } from "@/lib/format";
+import { buildMetaDetailedTargeting } from "@/lib/api/meta-targeting";
 import { cn } from "@/lib/utils";
 import {
   CampaignObjectiveSchema,
+  TargetingCategorySchema,
   type CampaignDraft,
   type CampaignObjective,
   type GeneratedCampaignStrategy,
@@ -37,6 +44,9 @@ import {
   type MetaAdPlanApprovalResponse,
   type MetaAdPlanAssistResponse,
   type MetaAdPlanSettings,
+  type AudienceIdea,
+  type AudienceTargetingTarget,
+  type TargetingCategory,
 } from "@/types";
 import { GeneratedStrategyView } from "../detail/generated-strategy-view";
 import { CreativeCard } from "@/components/creatives/creative-card";
@@ -45,6 +55,21 @@ const STEPS = ["goal", "audience", "strategy", "creatives", "review", "launch"] 
 
 /** Meta expects selected gender IDs as an array; omit the key for all genders. */
 const GENDER_TO_META = { male: 1, female: 2 } as const;
+const TARGETING_CATEGORIES: TargetingCategory[] = [
+  "interests",
+  "behaviors",
+  "job_titles",
+  "employers",
+  "education_majors",
+  "education_schools",
+  "life_events",
+  "industries",
+  "income",
+  "family_statuses",
+  "devices",
+  "operating_systems",
+];
+
 type Step = (typeof STEPS)[number];
 
 const DRAFT_STORAGE_KEY = "sahm_campaign_wizard_draft";
@@ -57,12 +82,16 @@ type WizardState = {
   startDate: string;
   endDate: string;
   audienceName: string;
+  audienceId: string | null;
+  audienceLibraryId: string | null;
+  audienceDescription: string;
+  audienceSource: "manual" | "ai";
   ageMin: number;
   ageMax: number;
   gender: "all" | "male" | "female";
   locations: string;
-  /** Interests already resolved to Meta IDs; targeting rejects bare names. */
-  interests: { id: string; name: string }[];
+  /** User-selected targeting options resolved to Meta IDs and category. */
+  targetingTargets: AudienceTargetingTarget[];
   brief: string;
   strategy: GeneratedCampaignStrategy | null;
   creativeIds: string[];
@@ -82,10 +111,9 @@ type WizardState = {
 type PreparedMetaPlan = { campaignId: string; recommendationId: string; title: string };
 
 /**
- * Meta fixes the billing event, optimization goal and destination type per
- * campaign objective, so these are derived rather than typed in by a customer.
- * A wrong value here makes Meta reject the campaign, which is exactly why the
- * raw fields were removed from the wizard.
+ * Objective-bound delivery settings are derived, never carried over from a
+ * previous wizard objective or written back from a generic MCP enum suggestion.
+ * In particular Awareness must use IMPRESSIONS billing with REACH optimization.
  */
 const META_OBJECTIVE_DEFAULTS: Record<
   string,
@@ -179,6 +207,29 @@ function toGeneratedStrategy(s: unknown): GeneratedCampaignStrategy | null {
   };
 }
 
+function parseTargetingTargets(
+  current: unknown,
+  legacyInterests: unknown,
+): AudienceTargetingTarget[] {
+  const parse = (value: unknown, missingCategory: TargetingCategory) =>
+    Array.isArray(value)
+      ? value.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const candidate = item as { id?: unknown; name?: unknown; category?: unknown };
+          const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+          const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+          if (!id || !name) return [];
+          if (candidate.category === undefined || candidate.category === null || candidate.category === "") {
+            return [{ id, name, category: missingCategory }];
+          }
+          const category = TargetingCategorySchema.safeParse(candidate.category);
+          return category.success ? [{ id, name, category: category.data }] : [];
+        })
+      : [];
+  const parsedCurrent = parse(current, "interests");
+  return parsedCurrent.length ? parsedCurrent : parse(legacyInterests, "interests");
+}
+
 function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>): WizardState {
   const aud = (p.audience ?? {}) as Record<string, unknown>;
   const rawGenders = (aud.genders ?? aud.gender) as string[] | string | undefined;
@@ -198,14 +249,10 @@ function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>
       ? (aud.locations as string)
       : "Cairo, EG, Giza, EG, Alexandria, EG";
 
-  const rawInterests = aud.interests;
-  const interests: { id: string; name: string }[] = Array.isArray(rawInterests)
-    ? rawInterests.map((it, idx) =>
-        typeof it === "object" && it !== null && "id" in it
-          ? (it as { id: string; name: string })
-          : { id: `int_${idx}`, name: String(it) },
-      )
-    : [];
+  const targetingTargets = parseTargetingTargets(
+    aud.targetingTargets ?? aud.targeting_targets,
+    aud.interestTargets ?? aud.interest_targets,
+  );
 
   const rawStart = (p.startDate ?? p.start_date) as string | undefined;
   const startDateStr = rawStart ? String(rawStart).slice(0, 10) : today();
@@ -228,12 +275,16 @@ function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>
     currency: String(p.currency ?? "EGP"),
     startDate: startDateStr,
     endDate: endDateStr,
-    audienceName: String(aud.name ?? aud.audience_name ?? "الجمهور المستهدف للنمو والمبيعات"),
-    ageMin: Number(aud.ageMin ?? aud.age_min ?? 22),
-    ageMax: Number(aud.ageMax ?? aud.age_max ?? 45),
+    audienceName: String(aud.name ?? aud.audience_name ?? "جمهور واسع"),
+    audienceId: typeof aud.id === "string" ? aud.id : null,
+    audienceLibraryId: typeof aud.id === "string" ? aud.id : null,
+    audienceDescription: String(aud.description ?? ""),
+    audienceSource: aud.source === "ai" ? "ai" : "manual",
+    ageMin: Number(aud.ageMin ?? aud.age_min ?? 18),
+    ageMax: Number(aud.ageMax ?? aud.age_max ?? 65),
     gender,
     locations: locationsStr,
-    interests,
+    targetingTargets,
     brief: String(p.strategy?.summary ?? p.brief ?? ""),
     strategy: toGeneratedStrategy(p.strategy),
     creativeIds: p.creativeIds ?? [],
@@ -246,7 +297,7 @@ function parsePrefillToState(p: Partial<CampaignDraft> & Record<string, unknown>
     destinationType: null,
     specialAdCategories: [],
     instagramActorId: "",
-    countries: ["EG"],
+    countries: Array.isArray(aud.countries) ? aud.countries.map(String) : ["EG"],
   };
 }
 
@@ -261,15 +312,31 @@ function getMetaPlanRecoveryAction(
   const ids = createdIds as Record<string, unknown>;
 
   if (execution.status === "failed_safe" && Object.keys(ids).length === 0) return "retry";
-  if (
-    execution.status === "partial" &&
-    execution.failure_status_code === 400 &&
-    (execution.attempted_step === "campaign_bid_strategy" || execution.attempted_step === "ad_set") &&
-    Object.keys(ids).length === 1 &&
-    typeof ids.campaign === "string" &&
-    ids.campaign.length > 0
-  ) {
-    return "resume";
+  if (execution.status === "partial" && execution.failure_status_code === 400) {
+    const hasCampaign = typeof ids.campaign === "string" && ids.campaign.length > 0;
+    if (
+      hasCampaign &&
+      (execution.attempted_step === "campaign_bid_strategy" || execution.attempted_step === "ad_set") &&
+      Object.keys(ids).length === 1
+    ) {
+      return "resume";
+    }
+
+    // A rejected first Ad Creative may be reviewed and resumed with both
+    // already-created paused objects. The backend independently validates the
+    // step and creative order before making any further Graph API request.
+    const noAdsCreated = Array.isArray(execution.ads) && execution.ads.length === 0;
+    if (
+      hasCampaign &&
+      typeof ids.ad_set === "string" &&
+      ids.ad_set.length > 0 &&
+      Object.keys(ids).length === 2 &&
+      typeof execution.attempted_step === "string" &&
+      execution.attempted_step.startsWith("creative:") &&
+      noAdsCreated
+    ) {
+      return "resume";
+    }
   }
   return null;
 }
@@ -279,6 +346,20 @@ export function CampaignWizard() {
   const tc = useTranslations("common");
   const to = useTranslations("objective");
   const locale = useLocale();
+  const targetingCategoryLabels: Record<TargetingCategory, string> = {
+    interests: t("audience.categories.interests"),
+    behaviors: t("audience.categories.behaviors"),
+    job_titles: t("audience.categories.jobTitles"),
+    employers: t("audience.categories.employers"),
+    education_majors: t("audience.categories.educationMajors"),
+    education_schools: t("audience.categories.educationSchools"),
+    life_events: t("audience.categories.lifeEvents"),
+    industries: t("audience.categories.industries"),
+    income: t("audience.categories.income"),
+    family_statuses: t("audience.categories.familyStatuses"),
+    devices: t("audience.categories.devices"),
+    operating_systems: t("audience.categories.operatingSystems"),
+  };
   const prefill = useUiStore((s) => s.campaignPrefill);
   const setPrefill = useUiStore((s) => s.setCampaignPrefill);
   const { dispatch, isPending } = useAction();
@@ -311,6 +392,15 @@ export function CampaignWizard() {
   };
 
   const meta = useMetaConnection();
+  const savedAudiences = useAudiences();
+  const createAudience = useCreateAudience();
+  const updateAudience = useUpdateAudience();
+  const archiveAudience = useArchiveAudience();
+  const suggestAudience = useSuggestAudiences();
+  const [audienceIdeas, setAudienceIdeas] = useState<AudienceIdea[]>([]);
+  const [audienceSuggestionError, setAudienceSuggestionError] = useState<string | null>(null);
+  const [audienceSaveMessage, setAudienceSaveMessage] = useState<string | null>(null);
+  const [audienceMissingInputs, setAudienceMissingInputs] = useState<string[]>([]);
 
   const [isAiPrefilled, setIsAiPrefilled] = useState(false);
   const [hasDraftRestored, setHasDraftRestored] = useState(false);
@@ -336,9 +426,14 @@ export function CampaignWizard() {
     return "goal";
   });
 
-  // Type-ahead for Meta Targeting Search
-  const [interestQuery, setInterestQuery] = useState("");
-  const interestSearch = useMetaInterestSearch(interestQuery);
+  // Category-aware type-ahead for Meta Targeting Search. AI phrases only
+  // prefill this search; a result must still be selected explicitly.
+  const [targetingCategory, setTargetingCategory] = useState<TargetingCategory>("interests");
+  const [targetingQuery, setTargetingQuery] = useState("");
+  const targetingTerms = targetingQuery.split(/[,،;؛\r\n]+/).map((term) => term.trim()).filter(Boolean);
+  const targetingSearchTerm = targetingTerms[targetingTerms.length - 1] ?? "";
+  const targetingQueryHasSeparators = /[,،;؛\r\n]/.test(targetingQuery);
+  const targetingSearch = useMetaInterestSearch(targetingSearchTerm, targetingCategory);
 
   const [state, setState] = useState<WizardState>(() => {
     if (prefill) {
@@ -354,7 +449,16 @@ export function CampaignWizard() {
         const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed?.state) return parsed.state;
+          if (parsed?.state && typeof parsed.state === "object") {
+            const restored = parsed.state as WizardState & { interests?: unknown };
+            return {
+              ...restored,
+              targetingTargets: parseTargetingTargets(
+                restored.targetingTargets,
+                restored.interests,
+              ),
+            };
+          }
         }
       } catch {}
     }
@@ -365,12 +469,16 @@ export function CampaignWizard() {
       currency: "EGP",
       startDate: today(),
       endDate: "",
-      audienceName: "الجمهور المستهدف للنمو والمبيعات",
-      ageMin: 22,
-      ageMax: 45,
+      audienceName: "جمهور واسع",
+      audienceId: null,
+      audienceLibraryId: null,
+      audienceDescription: "",
+      audienceSource: "manual",
+      ageMin: 18,
+      ageMax: 65,
       gender: "all",
       locations: "Cairo, EG",
-      interests: [],
+      targetingTargets: [],
       brief: "",
       strategy: null,
       creativeIds: [],
@@ -387,9 +495,17 @@ export function CampaignWizard() {
     };
   });
 
-  const interestOptions = (interestSearch.data?.results ?? []).filter(
-    (r) => !state.interests.some((s) => s.id === r.id),
+  const targetingOptions = (targetingSearch.isDebouncing ? [] : targetingSearch.data?.results ?? []).filter(
+    (result) => !state.targetingTargets.some(
+      (selected) => selected.category === result.category && selected.id === result.id,
+    ),
   );
+  const targetingSearchHasNoResults =
+    !targetingSearch.isDebouncing &&
+    !targetingSearch.isFetching &&
+    targetingSearchTerm.length >= 2 &&
+    targetingSearch.data?.available === true &&
+    targetingSearch.data.results.length === 0;
 
   const [preparedPlan, setPreparedPlan] = useState<PreparedMetaPlan | null>(null);
   const [planPreview, setPlanPreview] = useState<MetaAdPlanApprovalResponse | null>(null);
@@ -457,12 +573,16 @@ export function CampaignWizard() {
       currency: "EGP",
       startDate: today(),
       endDate: "",
-      audienceName: "الجمهور المستهدف للنمو والمبيعات",
-      ageMin: 22,
-      ageMax: 45,
+      audienceName: "جمهور واسع",
+      audienceId: null,
+      audienceLibraryId: null,
+      audienceDescription: "",
+      audienceSource: "manual",
+      ageMin: 18,
+      ageMax: 65,
       gender: "all",
       locations: "Cairo, EG",
-      interests: [],
+      targetingTargets: [],
       brief: "",
       strategy: null,
       creativeIds: [],
@@ -485,8 +605,152 @@ export function CampaignWizard() {
   const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => {
     setAssistResult(null);
     setAssistError(null);
-    setState((s) => ({ ...s, [k]: v }));
+    const targetingFields: Array<keyof WizardState> = [
+      "audienceName", "audienceDescription", "ageMin", "ageMax", "gender",
+      "locations", "countries", "targetingTargets",
+    ];
+    setState((s) => ({
+      ...s,
+      [k]: v,
+      ...(targetingFields.includes(k) ? { audienceId: null } : {}),
+      ...(k === "objective"
+        ? { billingEvent: null, optimizationGoal: null, destinationType: null }
+        : {}),
+    }));
   };
+
+  const selectSavedAudience = (value: string) => {
+    setAudienceSaveMessage(null);
+    if (value === "new") {
+      setState((current) => ({
+        ...current,
+        audienceId: null,
+        audienceLibraryId: null,
+        audienceSource: "manual",
+        audienceDescription: "",
+      }));
+      return;
+    }
+    const saved = savedAudiences.data?.find((audience) => audience.id === value);
+    if (!saved) return;
+    const genders = saved.targeting.genders;
+    const gender: WizardState["gender"] =
+      genders.includes("male") && !genders.includes("female")
+        ? "male"
+        : genders.includes("female") && !genders.includes("male")
+          ? "female"
+          : "all";
+    setState((current) => ({
+      ...current,
+      audienceId: saved.id,
+      audienceLibraryId: saved.id,
+      audienceName: saved.name,
+      audienceDescription: saved.description ?? "",
+      audienceSource: saved.source,
+      ageMin: saved.targeting.ageMin,
+      ageMax: saved.targeting.ageMax,
+      gender,
+      locations: saved.targeting.locations.join(", "),
+      countries: saved.targeting.countries,
+      targetingTargets: saved.targeting.targetingTargets.length
+        ? saved.targeting.targetingTargets
+        : saved.targeting.interestTargets.map((target) => ({ ...target, category: "interests" as const })),
+    }));
+    setTargetingQuery("");
+  };
+
+  const suggestAudienceIdeas = async () => {
+    setAudienceSuggestionError(null);
+    setAudienceMissingInputs([]);
+    try {
+      const result = await suggestAudience.mutateAsync({
+        campaignName: state.name.trim(),
+        objective: state.objective as CampaignObjective,
+        brief: state.brief.trim() || undefined,
+        countries: state.countries,
+        language: locale === "ar" ? "ar" : "en",
+      });
+      setAudienceIdeas(result.suggestions);
+      setAudienceMissingInputs(result.missingInputs);
+    } catch (error) {
+      setAudienceSuggestionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const saveAudience = async () => {
+    setAudienceSaveMessage(null);
+    const targeting = {
+      ageMin: state.ageMin,
+      ageMax: state.ageMax,
+      genders: [state.gender],
+      locations: state.locations.split(",").map((location) => location.trim()).filter(Boolean),
+      countries: state.countries,
+      interests: state.targetingTargets
+        .filter((target) => target.category === "interests")
+        .map((target) => target.name),
+      interestTargets: state.targetingTargets
+        .filter((target) => target.category === "interests")
+        .map(({ id, name }) => ({ id, name })),
+      targetingTargets: state.targetingTargets,
+      behaviors: state.targetingTargets
+        .filter((target) => target.category === "behaviors")
+        .map((target) => target.name),
+    };
+    const payload = {
+      name: state.audienceName.trim(),
+      description: state.audienceDescription.trim() || null,
+      targeting,
+      source: state.audienceSource,
+    };
+    try {
+      const saved = state.audienceLibraryId
+        ? await updateAudience.mutateAsync({ id: state.audienceLibraryId, patch: payload })
+        : await createAudience.mutateAsync(payload);
+      setState((current) => ({
+        ...current,
+        audienceId: saved.id,
+        audienceLibraryId: saved.id,
+        audienceName: saved.name,
+        audienceDescription: saved.description ?? "",
+        audienceSource: saved.source,
+      }));
+      setAudienceSaveMessage(
+        state.audienceLibraryId ? t("audience.updateSuccess") : t("audience.saveSuccess"),
+      );
+    } catch (error) {
+      setAudienceSaveMessage(error instanceof Error ? error.message : t("audience.saveFailed"));
+    }
+  };
+
+  const archiveSelectedAudience = async () => {
+    if (!state.audienceLibraryId) return;
+    if (typeof window !== "undefined" && !window.confirm(t("audience.archiveConfirm"))) return;
+    try {
+      await archiveAudience.mutateAsync(state.audienceLibraryId);
+      setState((current) => ({
+        ...current,
+        audienceId: null,
+        audienceLibraryId: null,
+        audienceSource: "manual",
+      }));
+      setAudienceSaveMessage(t("audience.archiveSuccess"));
+    } catch (error) {
+      setAudienceSaveMessage(error instanceof Error ? error.message : t("audience.archiveFailed"));
+    }
+  };
+
+  const applyAudienceIdea = (idea: AudienceIdea) => {
+    setState((current) => ({
+      ...current,
+      audienceId: null,
+      audienceLibraryId: null,
+      audienceName: idea.name,
+      audienceDescription: idea.summary,
+      audienceSource: "ai",
+    }));
+    setAudienceSaveMessage(null);
+  };
+
   const idx = STEPS.indexOf(step);
 
   const errors = useMemo(() => {
@@ -508,13 +772,24 @@ export function CampaignWizard() {
     startDate: new Date(state.startDate).toISOString(),
     endDate: state.endDate ? new Date(state.endDate).toISOString() : null,
     audience: {
+      id: state.audienceId ?? undefined,
       name: state.audienceName.trim(),
+      description: state.audienceDescription || null,
       ageMin: state.ageMin,
       ageMax: state.ageMax,
       genders: [state.gender],
       locations: state.locations.split(",").map((s) => s.trim()).filter(Boolean),
-      interests: state.interests.map((i) => i.name),
-      behaviors: [],
+      countries: state.countries,
+      interests: state.targetingTargets
+        .filter((target) => target.category === "interests")
+        .map((target) => target.name),
+      interestTargets: state.targetingTargets
+        .filter((target) => target.category === "interests")
+        .map(({ id, name }) => ({ id, name })),
+      targetingTargets: state.targetingTargets,
+      behaviors: state.targetingTargets
+        .filter((target) => target.category === "behaviors")
+        .map((target) => target.name),
     },
     // The backend stores campaign drafts separately from this transient AI plan.
     strategy: null,
@@ -546,6 +821,7 @@ export function CampaignWizard() {
   const buildPlanSettings = (): MetaAdPlanSettings => {
     const derived =
       META_OBJECTIVE_DEFAULTS[state.objective] ?? META_OBJECTIVE_DEFAULTS.traffic;
+    const detailedTargeting = buildMetaDetailedTargeting(state.targetingTargets);
     return {
     objective: state.objective as CampaignObjective,
     creativeIds: state.creativeIds,
@@ -560,21 +836,16 @@ export function CampaignWizard() {
         ? {}
         : { genders: [GENDER_TO_META[state.gender]] }),
       geo_locations: { countries: [...state.countries] },
-      // Meta rejects interest names; only Targeting Search IDs are accepted.
-      ...(state.interests.length > 0
-        ? {
-            flexible_spec: [
-              { interests: state.interests.map(({ id, name }) => ({ id, name })) },
-            ],
-          }
-        : {}),
+      // Only explicitly selected Meta results are included under documented
+      // fields; AI phrases and plain-text audience names are never sent.
+      ...detailedTargeting,
     },
-    billingEvent: state.billingEvent ?? derived.billingEvent,
-    optimizationGoal: state.optimizationGoal ?? derived.optimizationGoal,
+    billingEvent: derived.billingEvent,
+    optimizationGoal: derived.optimizationGoal,
     // Keep the current explicit no-special-category state unless MCP returns an
     // exact, validated value from a brief that states one.
     specialAdCategories: [...state.specialAdCategories],
-    destinationType: state.destinationType ?? derived.destinationType,
+    destinationType: derived.destinationType,
     // Left unset: needs a Meta Pixel / app object the workspace owner configures.
     promotedObject: undefined,
     destinationUrl: state.destinationUrl.trim() || undefined,
@@ -582,7 +853,7 @@ export function CampaignWizard() {
     headline: state.headline.trim() || undefined,
     callToAction: {
       type: state.callToActionType || "LEARN_MORE",
-      value: { link: state.destinationUrl.trim(), link_caption: state.headline.trim() },
+      value: { link: state.destinationUrl.trim() },
     },
     instagramActorId: state.instagramActorId.trim() || undefined,
     };
@@ -666,8 +937,12 @@ export function CampaignWizard() {
           ageMax: state.ageMax,
           genders: [state.gender],
           locations: state.locations.split(",").map((s) => s.trim()).filter(Boolean),
-          interests: state.interests.map((i) => i.name),
-          behaviors: [],
+          interests: state.targetingTargets
+            .filter((target) => target.category === "interests")
+            .map((target) => target.name),
+          behaviors: state.targetingTargets
+            .filter((target) => target.category === "behaviors")
+            .map((target) => target.name),
         },
       },
       { onSuccess: (s) => set("strategy", s) },
@@ -695,15 +970,17 @@ export function CampaignWizard() {
           ageMax: state.ageMax,
           gender: state.gender,
           countries: [...state.countries],
-          interests: state.interests.map((interest) => interest.name),
+          interests: state.targetingTargets
+            .filter((target) => target.category === "interests")
+            .map((target) => target.name),
         },
         destinationUrl: state.destinationUrl || undefined,
         primaryText: state.primaryText,
         headline: state.headline,
         callToActionType: state.callToActionType || undefined,
-        billingEvent: state.billingEvent ?? derived.billingEvent,
-        optimizationGoal: state.optimizationGoal ?? derived.optimizationGoal,
-        destinationType: state.destinationType ?? derived.destinationType,
+        billingEvent: derived.billingEvent,
+        optimizationGoal: derived.optimizationGoal,
+        destinationType: derived.destinationType,
         specialAdCategories: [...state.specialAdCategories],
       });
       setState((current) => ({
@@ -714,18 +991,8 @@ export function CampaignWizard() {
           result.fieldValidation.callToActionType === "valid" && result.callToActionType
             ? result.callToActionType
             : current.callToActionType,
-        billingEvent:
-          result.fieldValidation.billingEvent === "valid" && result.billingEvent
-            ? result.billingEvent
-            : current.billingEvent,
-        optimizationGoal:
-          result.fieldValidation.optimizationGoal === "valid" && result.optimizationGoal
-            ? result.optimizationGoal
-            : current.optimizationGoal,
-        destinationType:
-          result.fieldValidation.destinationType === "valid" && result.destinationType
-            ? result.destinationType
-            : current.destinationType,
+        // Billing, performance goal, and destination remain objective-derived;
+        // the MCP context validates them but never overrides the fixed mapping.
         specialAdCategories:
           result.fieldValidation.specialAdCategories === "valid" && result.specialAdCategories
             ? result.specialAdCategories
@@ -843,6 +1110,144 @@ export function CampaignWizard() {
 
           {step === "audience" && (
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-4 sm:col-span-2">
+                <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2 sm:items-end">
+                  <div className="space-y-1.5">
+                    <Label>{t("audience.savedLabel")}</Label>
+                    <p className="text-xs text-muted-foreground">{t("audience.libraryHint")}</p>
+                  </div>
+                  <Select value={state.audienceLibraryId ?? "new"} onValueChange={selectSavedAudience}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("audience.savedPlaceholder")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">{t("audience.buildNew")}</SelectItem>
+                      {(savedAudiences.data ?? []).map((audience) => (
+                        <SelectItem key={audience.id} value={audience.id}>
+                          {audience.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!savedAudiences.isLoading && savedAudiences.data?.length === 0 && (
+                    <p className="text-xs text-muted-foreground sm:col-span-2">{t("audience.emptyLibrary")}</p>
+                  )}
+                  {savedAudiences.isError && (
+                    <p role="alert" className="text-xs text-destructive sm:col-span-2">
+                      {t("audience.libraryLoadFailed")}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2 rounded-lg border border-dashed p-3">
+                  <div>
+                    <Label htmlFor="audience-brief">{t("audience.helperBrief")}</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">{t("audience.helperHint")}</p>
+                  </div>
+                  <Textarea
+                    id="audience-brief"
+                    value={state.brief}
+                    onChange={(event) => set("brief", event.target.value)}
+                    placeholder={t("audience.helperPlaceholder")}
+                    rows={2}
+                    maxLength={4000}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={suggestAudienceIdeas}
+                    disabled={!state.name.trim() || suggestAudience.isPending}
+                  >
+                    {suggestAudience.isPending ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : <Sparkles className="me-2 h-4 w-4" />}
+                    {suggestAudience.isPending ? t("audience.suggesting") : t("audience.suggest")}
+                  </Button>
+                  {audienceSuggestionError && (
+                    <p role="alert" className="text-xs text-destructive">{audienceSuggestionError}</p>
+                  )}
+                  {audienceMissingInputs.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {t("audience.missingInputs", { inputs: audienceMissingInputs.join(" · ") })}
+                    </p>
+                  )}
+                  {audienceIdeas.length > 0 && (
+                    <div className="grid gap-2 pt-1 md:grid-cols-2">
+                      {audienceIdeas.map((idea, index) => {
+                        const searchTerms = [
+                          ...idea.targetingSearchTerms,
+                          ...idea.interestSearchTerms.map((term) => ({ category: "interests" as const, term })),
+                        ].filter((item, itemIndex, all) =>
+                          all.findIndex((candidate) => candidate.category === item.category && candidate.term === item.term) === itemIndex,
+                        );
+                        return (
+                          <div key={`${idea.name}-${index}`} className="space-y-2 rounded-md border bg-muted/20 p-3">
+                            <div>
+                              <p className="text-sm font-medium">{idea.name}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{idea.summary}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{idea.rationale}</p>
+                            </div>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => applyAudienceIdea(idea)}>
+                              {t("audience.useSuggestion")}
+                            </Button>
+                            {searchTerms.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground">{t("audience.searchTermsHint")}</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {searchTerms.map(({ category, term }, termIndex) => (
+                                    <Button
+                                      key={`${category}-${term}-${termIndex}`}
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setTargetingCategory(category);
+                                        setTargetingQuery(term);
+                                      }}
+                                    >
+                                      <span className="me-1 text-muted-foreground">{targetingCategoryLabels[category]}:</span>
+                                      {term}
+                                    </Button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={saveAudience}
+                    disabled={createAudience.isPending || updateAudience.isPending || state.audienceName.trim().length < 2}
+                  >
+                    {(createAudience.isPending || updateAudience.isPending) && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                    {state.audienceLibraryId ? t("audience.updateSaved") : t("audience.saveToLibrary")}
+                  </Button>
+                  {state.audienceLibraryId && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={archiveSelectedAudience}
+                      disabled={archiveAudience.isPending}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      {archiveAudience.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                      {t("audience.archive")}
+                    </Button>
+                  )}
+                  {audienceSaveMessage && (
+                    <p role="status" className="text-xs text-muted-foreground">{audienceSaveMessage}</p>
+                  )}
+                </div>
+              </div>
+
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="aname">{t("audience.name")}</Label>
                 <Input id="aname" value={state.audienceName} onChange={(e) => set("audienceName", e.target.value)} placeholder={t("audience.namePlaceholder")} />
@@ -872,29 +1277,66 @@ export function CampaignWizard() {
                 <Label htmlFor="loc">{t("audience.locations")}</Label>
                 <Input id="loc" value={state.locations} onChange={(e) => set("locations", e.target.value)} />
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="int">{t("audience.interests")}</Label>
-                <Input
-                  id="int"
-                  value={interestQuery}
-                  onChange={(e) => setInterestQuery(e.target.value)}
-                  placeholder={t("audience.interestsPlaceholder")}
-                  autoComplete="off"
-                />
-                {state.interests.length > 0 && (
+              <div className="space-y-3 sm:col-span-2">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="targeting-category">{t("audience.targetingCategory")}</Label>
+                    <Select
+                      value={targetingCategory}
+                      onValueChange={(value) => setTargetingCategory(value as TargetingCategory)}
+                    >
+                      <SelectTrigger id="targeting-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TARGETING_CATEGORIES.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {targetingCategoryLabels[category]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="targeting-search">
+                      {t("audience.searchWithinCategory", { category: targetingCategoryLabels[targetingCategory] })}
+                    </Label>
+                    <Input
+                      id="targeting-search"
+                      value={targetingQuery}
+                      onChange={(event) => setTargetingQuery(event.target.value)}
+                      placeholder={t("audience.targetingPlaceholder")}
+                      autoComplete="off"
+                    />
+                    {targetingQueryHasSeparators && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("audience.targetingLastTermOnly")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {state.targetingTargets.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {state.interests.map((i) => (
+                    {state.targetingTargets.map((target) => (
                       <span
-                        key={i.id}
-                        className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
+                        key={`${target.category}:${target.id}`}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-muted/40 px-2 py-1 text-xs"
                       >
-                        {i.name}
+                        <span className="text-muted-foreground">{targetingCategoryLabels[target.category]}</span>
+                        <span className="font-medium">{target.name}</span>
+                        <code className="max-w-28 truncate text-[10px] text-muted-foreground">{target.id}</code>
                         <button
                           type="button"
                           className="p-0.5 text-muted-foreground hover:text-foreground"
-                          aria-label={t("audience.removeInterest", { name: i.name })}
+                          aria-label={t("audience.removeTargeting", { name: target.name })}
                           onClick={() =>
-                            set("interests", state.interests.filter((x) => x.id !== i.id))
+                            set(
+                              "targetingTargets",
+                              state.targetingTargets.filter(
+                                (selected) => selected.category !== target.category || selected.id !== target.id,
+                              ),
+                            )
                           }
                         >
                           <X className="h-3 w-3" />
@@ -903,30 +1345,64 @@ export function CampaignWizard() {
                     ))}
                   </div>
                 )}
-                {interestOptions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {interestOptions.map((r) => (
+
+                {targetingOptions.length > 0 && (
+                  <div className="space-y-1.5">
+                    {targetingOptions.map((result) => (
                       <Button
-                        key={r.id}
+                        key={`${result.category}:${result.id}`}
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="gap-1"
-                        onClick={() =>
-                          set("interests", [...state.interests, { id: r.id, name: r.name }])
-                        }
+                        className="h-auto w-full justify-start py-2 text-start"
+                        disabled={state.targetingTargets.length >= 20}
+                        onClick={() => {
+                          set("targetingTargets", [
+                            ...state.targetingTargets,
+                            { id: result.id, name: result.name, category: result.category },
+                          ]);
+                          setTargetingQuery("");
+                        }}
                       >
-                        <Plus className="h-3 w-3" />
-                        {r.name}
+                        <Plus className="me-2 h-3 w-3 shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{result.name}</span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                              {targetingCategoryLabels[result.category]}
+                            </Badge>
+                            <span>{t("audience.metaId", { id: result.id })}</span>
+                          </span>
+                          {result.description && (
+                            <span className="mt-1 block whitespace-normal text-xs text-muted-foreground">
+                              {result.description}
+                            </span>
+                          )}
+                        </span>
                       </Button>
                     ))}
                   </div>
                 )}
+
                 <p className="text-xs text-muted-foreground">
-                  {interestSearch.data && !interestSearch.data.available
-                    ? t("audience.interestsUnavailable")
-                    : t("audience.interestsHint")}
+                  {!targetingSearch.isDebouncing && targetingSearch.data && !targetingSearch.data.available
+                    ? t("audience.targetingUnavailable", { category: targetingCategoryLabels[targetingCategory] })
+                    : t("audience.targetingHint")}
                 </p>
+                {state.targetingTargets.length >= 20 && (
+                  <p className="text-xs text-muted-foreground">{t("audience.targetingLimit")}</p>
+                )}
+                {targetingSearchTerm.length >= 2 &&
+                  (targetingSearch.isDebouncing || targetingSearch.isFetching) && (
+                    <p className="text-xs text-muted-foreground" aria-live="polite">
+                      {t("audience.targetingSearching")}
+                    </p>
+                  )}
+                {targetingSearchHasNoResults && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("audience.targetingNoResults", { category: targetingCategoryLabels[targetingCategory] })}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -1043,9 +1519,11 @@ export function CampaignWizard() {
                   <p className="text-xs text-muted-foreground mt-1">
                     📍 {state.locations}
                   </p>
-                  {state.interests.length > 0 && (
+                  {state.targetingTargets.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                      🎯 {state.interests.map((it) => it.name).join(", ")}
+                      🎯 {state.targetingTargets
+                        .map((target) => `${targetingCategoryLabels[target.category]}: ${target.name}`)
+                        .join(", ")}
                     </p>
                   )}
                 </ReviewItem>
