@@ -1156,6 +1156,9 @@ export function mapConnector(raw: Json): Connector {
     hasOverride: bool(raw.hasOverride, false),
     configured: bool(raw.configured, false),
     provider: nullableStr(raw.provider),
+    // Server-provided provider choices; empty for a connector with no selector.
+    providers: asArray(raw.providers).map((value) => str(value)).filter(Boolean),
+    missingRequired: asArray(raw.missingRequired).map((value) => str(value)).filter(Boolean),
     placeholder: bool(raw.placeholder, false),
     fields: asArray(raw.fields).map(mapConnectorField),
     notes: str(raw.notes),

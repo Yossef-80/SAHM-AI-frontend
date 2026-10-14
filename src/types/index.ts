@@ -1491,6 +1491,14 @@ export const ConnectorSchema = z.object({
   hasOverride: z.boolean().default(false),
   configured: z.boolean().default(false),
   provider: z.string().nullable().default(null),
+  /**
+   * Values the provider field accepts, in server order. Empty when the connector
+   * has no provider selector. The form renders a select from this list so a
+   * supported provider cannot be misspelled into a save that does nothing.
+   */
+  providers: z.array(z.string()).default([]),
+  /** Required field keys that still have no value; empty when nothing is missing. */
+  missingRequired: z.array(z.string()).default([]),
   /** True when the chosen provider returns placeholder data rather than live data. */
   placeholder: z.boolean().default(false),
   fields: z.array(ConnectorFieldSchema).default([]),

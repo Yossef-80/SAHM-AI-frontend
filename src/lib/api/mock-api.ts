@@ -1891,7 +1891,20 @@ export class MockApi implements MarketingApi {
     }
     connector.hasOverride = connector.fields.some((f) => f.source === "workspace");
     connector.source = connector.hasOverride ? "workspace" : connector.source;
-    connector.configured = connector.fields.filter((f) => f.required).every((f) => f.hasValue || f.value !== null);
+    // Mirror the server's resolution: the provider field decides both whether
+    // this connector is a placeholder and whether it can be "configured" at all.
+    const providerField = connector.fields.find((f) => f.key === "provider");
+    if (providerField) {
+      connector.provider = providerField.value ?? null;
+      connector.placeholder =
+        connector.provider === null || ["mock", "none"].includes(connector.provider);
+    }
+    connector.missingRequired = connector.fields
+      .filter((f) => f.required && !(f.hasValue || f.value !== null))
+      .map((f) => f.key);
+    connector.configured =
+      !connector.placeholder &&
+      connector.fields.filter((f) => f.required).every((f) => f.hasValue || f.value !== null);
     state.connectors.overrideCount = state.connectors.connectors.filter((c) => c.hasOverride).length;
     return clone(connector);
   }

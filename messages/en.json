@@ -31,7 +31,12 @@
     "budgetExceeded": "This workspace has used its token budget. Raise the limit in Business profile or wait for the period to reset.",
     "unauthorized": "Your session has expired. Please sign in again.",
     "forbidden": "You do not have permission to do this. Ask a workspace owner.",
-    "schemaMismatch": "The server returned data this app cannot read. Check that the frontend and backend versions match."
+    "schemaMismatch": "The server returned data this app cannot read. Check that the frontend and backend versions match.",
+    "networkError": "No response arrived from the server at {url}. It may be stopped or restarting, unreachable from this browser, or the browser blocked the response. Check the backend log for a request id, then try again.",
+    "networkErrorNoUrl": "No response arrived from the server. It may be stopped or restarting, or unreachable from this browser. Check the backend log, then try again.",
+    "requestTimeout": "The request took longer than allowed before any response arrived. The server may still be working on it — wait a moment before retrying.",
+    "serverError": "The server hit an internal error. Quote reference {ref} to support so the log can be checked.",
+    "serverErrorNoRef": "The server hit an internal error. Check the backend log for the cause, then try again."
   },
   "auth": {
     "loginTitle": "Sign in",
@@ -976,7 +981,11 @@
       "env": "Environment",
       "default": "Default",
       "unset": "Not set"
-    }
+    },
+    "selectProvider": "— choose a provider —",
+    "providerRequired": "The selected provider ({provider}) returns placeholder data only, so the values you entered would never be read. Choose a real provider (for example openai) and save — nothing was saved just now: {fields}",
+    "orphanedCredentials": "⚠ {fields} are stored, but the provider \"{provider}\" never reads them. This connector cannot work until you select a real provider and save.",
+    "missingRequired": "Missing required fields: {fields}"
   },
   "llm": {
     "title": "Language models",

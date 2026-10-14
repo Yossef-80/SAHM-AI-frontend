@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { dispatchAction, ActionCancelledError } from "@/lib/actions/dispatch";
+import { describeError } from "@/lib/errors";
 import type { ActionContext, ActionResult } from "@/lib/actions/registry";
 import { useUiStore } from "@/store/ui-store";
 import { useAssistantStore } from "@/store/assistant-store";
@@ -23,6 +24,9 @@ export function useAction() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const t = useTranslations("actions");
+  // Error copy lives in its own namespace: the one place that decides how a
+  // failed action is described to the user is `describeError`.
+  const te = useTranslations("errors");
   const requestConfirm = useUiStore((s) => s.requestConfirm);
   const requestPickCampaign = useUiStore((s) => s.requestPickCampaign);
   const setCreateCreative = useUiStore((s) => s.setCreateCreative);
@@ -62,14 +66,15 @@ export function useAction() {
           toast.info(t("toast.cancelled"));
           return null;
         }
-        const message = err instanceof Error ? err.message : String(err);
-        toast.error(t("toast.failed", { message }));
+        // `describeError` so a known code gets copy in the user's language
+        // instead of the raw English message the API happened to carry.
+        toast.error(t("toast.failed", { message: describeError(err, te) }));
         return { ok: false };
       } finally {
         setPending(null);
       }
     },
-    [ctx, router, t],
+    [ctx, router, t, te],
   );
 
   return { dispatch, pending, isPending: pending !== null };

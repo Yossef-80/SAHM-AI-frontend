@@ -530,14 +530,19 @@ export class HttpApi implements MarketingApi {
           "request_timeout",
           `The request to ${url} timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS}ms. The backend may still be processing it.`,
           408,
-          { cause, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS },
+          { cause, url, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS },
         );
       }
+      // `fetch` rejects only when no readable HTTP response arrives at all: the
+      // server is down or restarting, the URL/port is wrong, or the browser
+      // blocked the response (CORS). It is *not* proof that the backend is
+      // stopped -- a 500 sent without CORS headers lands here too -- so the
+      // wording stays honest about what is actually known.
       throw new ApiError(
         "network_error",
-        `Could not reach the backend at ${url}. Check that it is running and that the browser can access it.`,
+        `No HTTP response from ${url}. The server may be stopped or restarting, unreachable from this browser, or its response was blocked (CORS). Check the backend log for a request id, then try again.`,
         0,
-        { cause },
+        { cause, url },
       );
     }
     // The backend creates a fresh request id when the client does not supply
@@ -568,6 +573,19 @@ export class HttpApi implements MarketingApi {
     if (res.status === 401) {
       // Surface the backend's own generic message verbatim on the login screen.
       return new ApiError(code || "unauthorized", message || "Unauthorized", 401, details);
+    }
+    if (res.status >= 500) {
+      // The backend answers an unhandled failure with `internal_error` and a
+      // request id that its own log line carries. Keep the id with the message:
+      // without it an operator has a user complaint and no way to find the
+      // traceback.
+      const requestId = typeof details?.requestId === "string" ? details.requestId : "";
+      return new ApiError(
+        code || "internal_error",
+        requestId ? `${message} (ref: ${requestId})` : message,
+        res.status,
+        details,
+      );
     }
     return new ApiError(code, message, res.status, details);
   }
