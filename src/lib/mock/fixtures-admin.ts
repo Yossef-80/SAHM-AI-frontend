@@ -188,6 +188,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: true,
     provider: "meta_ads",
+    providers: [],
+    missingRequired: [],
     placeholder: false,
     notes: "Demo-only settings. In production, an admin configures Meta; campaign creation still requires a separate review and approval.",
     fields: [
@@ -212,6 +214,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: true,
     configured: true,
     provider: "google_places",
+    providers: [],
+    missingRequired: [],
     placeholder: false,
     notes: "Powers local competitor research and store discovery.",
     fields: [
@@ -226,6 +230,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: false,
     provider: "dataforseo",
+    providers: ["mock", "dataforseo"],
+    missingRequired: ["login", "password"],
     placeholder: true,
     notes: "Keyword volumes and SERP data. Unconfigured tools return placeholder numbers.",
     fields: [
@@ -240,6 +246,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: true,
     provider: "mock",
+    providers: ["mock", "openai", "stability"],
+    missingRequired: [],
     placeholder: true,
     notes: "Creative generation. `mock` returns deterministic placeholder images.",
     fields: [
@@ -255,6 +263,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: true,
     provider: "none",
+    providers: ["mock", "tavily", "serper", "brave"],
+    missingRequired: [],
     placeholder: true,
     notes: "Market and competitor research. `none` disables the tool.",
     fields: [field("provider", "Provider", { value: "none", source: "default", maxLength: 30 })],

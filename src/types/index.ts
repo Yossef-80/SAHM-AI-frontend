@@ -47,18 +47,121 @@ export type BrandProfile = z.infer<typeof BrandProfileSchema>;
 /* Audience                                                            */
 /* ------------------------------------------------------------------ */
 
+export const TargetingCategorySchema = z.enum([
+  "interests",
+  "behaviors",
+  "job_titles",
+  "employers",
+  "education_majors",
+  "education_schools",
+  "life_events",
+  "industries",
+  "income",
+  "family_statuses",
+  "devices",
+  "operating_systems",
+]);
+export type TargetingCategory = z.infer<typeof TargetingCategorySchema>;
+
+export const AudienceInterestSchema = z.object({ id: z.string().min(1), name: z.string().min(1) });
+export type AudienceInterest = z.infer<typeof AudienceInterestSchema>;
+
+/** A Meta-resolved option selected explicitly by the user. */
+export const AudienceTargetingTargetSchema = AudienceInterestSchema.extend({
+  category: TargetingCategorySchema.default("interests"),
+});
+export type AudienceTargetingTarget = z.infer<typeof AudienceTargetingTargetSchema>;
+
+/** An AI-generated search phrase; it is not itself an active targeting option. */
+export const TargetingSearchTermSchema = z.object({
+  category: TargetingCategorySchema.default("interests"),
+  term: z.string().min(2).max(120),
+});
+export type TargetingSearchTerm = z.infer<typeof TargetingSearchTermSchema>;
+
+export const AudienceTargetingSchema = z.object({
+  ageMin: z.number().int().min(13).max(65).default(18),
+  ageMax: z.number().int().min(13).max(65).default(65),
+  genders: z.array(z.enum(["male", "female", "all"])).default(["all"]),
+  locations: z.array(z.string()).default([]),
+  countries: z.array(z.string()).default([]),
+  interests: z.array(z.string()).default([]),
+  interestTargets: z.array(AudienceInterestSchema).default([]),
+  targetingTargets: z.array(AudienceTargetingTargetSchema).default([]),
+  behaviors: z.array(z.string()).default([]),
+});
+export type AudienceTargeting = z.infer<typeof AudienceTargetingSchema>;
+
+/** Flat view model used by the campaign detail audience tab. */
 export const AudienceSchema = z.object({
   id: IdSchema,
   name: z.string(),
+  description: z.string().nullable().optional(),
   ageMin: z.number().int().min(13),
   ageMax: z.number().int().max(65),
   genders: z.array(z.enum(["male", "female", "all"])),
   locations: z.array(z.string()),
+  countries: z.array(z.string()).default([]),
   interests: z.array(z.string()),
+  interestTargets: z.array(AudienceInterestSchema).default([]),
+  targetingTargets: z.array(AudienceTargetingTargetSchema).default([]),
   behaviors: z.array(z.string()).default([]),
+  source: z.enum(["manual", "ai"]).optional(),
+  isArchived: z.boolean().optional(),
   estimatedReach: z.number().int().nonnegative().optional(),
 });
 export type Audience = z.infer<typeof AudienceSchema>;
+
+export const SavedAudienceSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  targeting: AudienceTargetingSchema,
+  source: z.enum(["manual", "ai"]),
+  isArchived: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type SavedAudience = z.infer<typeof SavedAudienceSchema>;
+
+export const SavedAudienceListSchema = z.object({
+  audiences: z.array(SavedAudienceSchema),
+  total: z.number().int().nonnegative(),
+});
+
+export const SavedAudienceInputSchema = z.object({
+  name: z.string().min(2).max(200),
+  description: z.string().max(1000).nullable().optional(),
+  targeting: AudienceTargetingSchema,
+  source: z.enum(["manual", "ai"]).default("manual"),
+});
+export type SavedAudienceInput = z.infer<typeof SavedAudienceInputSchema>;
+
+export const AudienceSuggestionInputSchema = z.object({
+  campaignName: z.string().min(2).max(200),
+  objective: z.enum(["awareness", "traffic", "engagement", "leads", "sales", "app_installs"]),
+  brief: z.string().max(4000).optional(),
+  countries: z.array(z.string()).max(12).default([]),
+  language: LocaleSchema.default("ar"),
+});
+export type AudienceSuggestionInput = z.infer<typeof AudienceSuggestionInputSchema>;
+
+export const AudienceIdeaSchema = z.object({
+  name: z.string(),
+  summary: z.string(),
+  approach: z.enum(["broad", "targeting_hypothesis", "interest_hypothesis"]),
+  interestSearchTerms: z.array(z.string()).default([]),
+  targetingSearchTerms: z.array(TargetingSearchTermSchema).default([]),
+  rationale: z.string(),
+});
+export type AudienceIdea = z.infer<typeof AudienceIdeaSchema>;
+
+export const AudienceSuggestionResponseSchema = z.object({
+  suggestions: z.array(AudienceIdeaSchema),
+  missingInputs: z.array(z.string()).default([]),
+});
+export type AudienceSuggestionResponse = z.infer<typeof AudienceSuggestionResponseSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Creative                                                            */
@@ -178,6 +281,15 @@ export const MetricPointSchema = z.object({
 });
 export type MetricPoint = z.infer<typeof MetricPointSchema>;
 
+export const CampaignAudienceSnapshotSchema = z.object({
+  id: IdSchema,
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  targeting: AudienceTargetingSchema,
+  estimatedReach: z.number().int().nonnegative().optional(),
+});
+export type CampaignAudienceSnapshot = z.infer<typeof CampaignAudienceSnapshotSchema>;
+
 export const CampaignSchema = z.object({
   id: IdSchema,
   businessId: IdSchema,
@@ -189,6 +301,7 @@ export const CampaignSchema = z.object({
   startDate: IsoDateSchema,
   endDate: IsoDateSchema.nullable(),
   audienceId: IdSchema.nullable(),
+  audienceSnapshot: CampaignAudienceSnapshotSchema.nullable().optional(),
   strategy: CampaignStrategySchema.nullable(),
   creativeIds: z.array(IdSchema),
   metaCampaignId: z.string().nullable(),
@@ -551,11 +664,44 @@ export const MetaConnectionSchema = z.object({
 });
 export type MetaConnection = z.infer<typeof MetaConnectionSchema>;
 
-/** One interest resolved by Meta Targeting Search, ready for `flexible_spec`. */
+/** Read-only campaign row fetched from the connected Meta account. */
+export const MetaAccountCampaignSchema = z.object({
+  metaCampaignId: z.string(),
+  name: z.string(),
+  objective: z.string().nullable(),
+  status: z.string().nullable(),
+  effectiveStatus: z.string().nullable(),
+  createdTime: z.string().nullable(),
+  startTime: z.string().nullable(),
+  stopTime: z.string().nullable(),
+});
+export type MetaAccountCampaign = z.infer<typeof MetaAccountCampaignSchema>;
+
+export const MetaAccountCampaignPageSchema = z.object({
+  status: z.enum(["ok", "partial", "unavailable"]),
+  source: z.string(),
+  unavailableReason: z.string().nullable(),
+  accountId: z.string().nullable(),
+  campaigns: z.array(MetaAccountCampaignSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+  retrievedAt: z.string().nullable(),
+});
+export type MetaAccountCampaignPage = z.infer<typeof MetaAccountCampaignPageSchema>;
+
+export type ListMetaAccountCampaignsInput = {
+  search?: string;
+  limit?: number;
+  after?: string;
+};
+
+/** One category-aware targeting option resolved by Meta Targeting Search. */
 export const MetaInterestSuggestionSchema = z.object({
   id: z.string(),
   name: z.string(),
+  category: TargetingCategorySchema.default("interests"),
   audienceSize: z.number().nullable().optional(),
+  description: z.string().nullable().optional(),
   path: z.array(z.string()).default([]),
 });
 export type MetaInterestSuggestion = z.infer<typeof MetaInterestSuggestionSchema>;
@@ -564,6 +710,7 @@ export const MetaTargetingSearchSchema = z.object({
   available: z.boolean().default(true),
   unavailableReason: z.string().nullable().optional(),
   results: z.array(MetaInterestSuggestionSchema).default([]),
+  hasMore: z.boolean().default(false),
 });
 export type MetaTargetingSearch = z.infer<typeof MetaTargetingSearchSchema>;
 
@@ -1344,6 +1491,14 @@ export const ConnectorSchema = z.object({
   hasOverride: z.boolean().default(false),
   configured: z.boolean().default(false),
   provider: z.string().nullable().default(null),
+  /**
+   * Values the provider field accepts, in server order. Empty when the connector
+   * has no provider selector. The form renders a select from this list so a
+   * supported provider cannot be misspelled into a save that does nothing.
+   */
+  providers: z.array(z.string()).default([]),
+  /** Required field keys that still have no value; empty when nothing is missing. */
+  missingRequired: z.array(z.string()).default([]),
   /** True when the chosen provider returns placeholder data rather than live data. */
   placeholder: z.boolean().default(false),
   fields: z.array(ConnectorFieldSchema).default([]),

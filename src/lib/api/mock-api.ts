@@ -1,11 +1,17 @@
 import type { MarketingApi } from "./types";
 import { ApiError } from "./types";
+import { getMockMetaTargetingResults } from "./mock-targeting";
 import * as fx from "@/lib/mock/fixtures";
 import * as fxx from "@/lib/mock/fixtures-extra";
 import * as fxa from "@/lib/mock/fixtures-admin";
 import { useAuthStore } from "@/store/auth-store";
 import type {
   AgentTask,
+  Audience,
+  SavedAudience,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
+  AudienceSuggestionResponse,
   AuditFilters,
   AuditList,
   AuthSession,
@@ -35,6 +41,10 @@ import type {
   MemoryReindexResult,
   Message,
   MetaConnection,
+  MetaAccountCampaign,
+  MetaAccountCampaignPage,
+  ListMetaAccountCampaignsInput,
+  TargetingCategory,
   MetaAdPlanSettings,
   MetaAdPlanAssistInput,
   MetaAdPlanAssistResponse,
@@ -65,6 +75,8 @@ import {
   AddToCampaignInputSchema,
   AnalyzeReferenceInputSchema,
   ApplyRecommendationInputSchema,
+  SavedAudienceInputSchema,
+  AudienceSuggestionInputSchema,
   CampaignDraftSchema,
   GenerateCreativeInputSchema,
   GenerateStrategyInputSchema,
@@ -107,6 +119,7 @@ async function simulate(opts: { safe?: boolean } = {}) {
 
 type State = {
   campaigns: Campaign[];
+  audiences: SavedAudience[];
   businessProfile: BusinessProfileForm;
   memory: MemoryItem[];
   connectors: ConnectorSettings;
@@ -128,6 +141,27 @@ type State = {
 
 const state: State = {
   campaigns: clone(fx.campaigns),
+  audiences: clone(fx.audiences.map((audience) => ({
+    id: audience.id,
+    businessId: fx.business.id,
+    name: audience.name,
+    description: null,
+    targeting: {
+      ageMin: audience.ageMin,
+      ageMax: audience.ageMax,
+      genders: audience.genders,
+      locations: audience.locations,
+      countries: ["EG"],
+      interests: audience.interests,
+      interestTargets: [],
+      targetingTargets: [],
+      behaviors: audience.behaviors,
+    },
+    source: "manual" as const,
+    isArchived: false,
+    createdAt: now(),
+    updatedAt: now(),
+  }))),
   businessProfile: clone(fxa.mockBusinessProfile) as BusinessProfileForm,
   memory: clone(fxa.mockMemoryItems),
   connectors: clone(fxa.mockConnectorSettings),
@@ -761,6 +795,63 @@ export class MockApi implements MarketingApi {
     if (input?.search) list = list.filter((c) => c.name.toLowerCase().includes(input.search!.toLowerCase()));
     return clone(list);
   }
+  async listMetaAccountCampaigns(input?: ListMetaAccountCampaignsInput): Promise<MetaAccountCampaignPage> {
+    await simulate({ safe: true });
+    const mockCampaigns: MetaAccountCampaign[] = [
+      {
+        metaCampaignId: "23851234567890",
+        name: "Summer Cold Brew Launch",
+        objective: "OUTCOME_SALES",
+        status: "ACTIVE",
+        effectiveStatus: "ACTIVE",
+        createdTime: "2026-09-18T10:00:00+0000",
+        startTime: "2026-09-20T00:00:00+0000",
+        stopTime: null,
+      },
+      {
+        metaCampaignId: "mock-meta-90001",
+        name: "Imported · Cairo Retargeting Preview",
+        objective: "OUTCOME_ENGAGEMENT",
+        status: "ACTIVE",
+        effectiveStatus: "ACTIVE",
+        createdTime: "2026-09-12T10:00:00+0000",
+        startTime: "2026-09-14T00:00:00+0000",
+        stopTime: null,
+      },
+      {
+        metaCampaignId: "mock-meta-90002",
+        name: "Imported · Winter Menu Awareness Preview",
+        objective: "OUTCOME_AWARENESS",
+        status: "PAUSED",
+        effectiveStatus: "CAMPAIGN_PAUSED",
+        createdTime: "2026-08-30T10:00:00+0000",
+        startTime: "2026-09-01T00:00:00+0000",
+        stopTime: null,
+      },
+    ];
+    const search = input?.search?.trim().toLowerCase();
+    const filtered = search
+      ? mockCampaigns.filter((campaign) =>
+          `${campaign.name} ${campaign.metaCampaignId}`.toLowerCase().includes(search),
+        )
+      : mockCampaigns;
+    const offset = Math.max(0, Number.parseInt(input?.after ?? "0", 10) || 0);
+    const limit = Math.max(1, Math.min(input?.limit ?? 50, 100));
+    const campaigns = filtered.slice(offset, offset + limit);
+    const nextOffset = offset + campaigns.length;
+    const hasMore = nextOffset < filtered.length;
+    return {
+      status: "ok",
+      source: "mock_meta_marketing_api",
+      unavailableReason: null,
+      accountId: "mock-ad-account",
+      campaigns: clone(campaigns),
+      hasMore,
+      nextCursor: hasMore ? String(nextOffset) : null,
+      retrievedAt: now(),
+    };
+  }
+
   async getCampaign(id: string) {
     await simulate();
     return clone(findOr404(state.campaigns, id, "Campaign"));
@@ -768,7 +859,10 @@ export class MockApi implements MarketingApi {
   async createCampaign(raw: CampaignDraft) {
     const draft = CampaignDraftSchema.parse(raw);
     await simulate();
-    const audienceId = draft.audience.id ?? uid("aud");
+    const audienceId = draft.audience.id ?? null;
+    const savedAudience = audienceId
+      ? state.audiences.find((audience) => audience.id === audienceId && !audience.isArchived)
+      : null;
     const campaign: Campaign = {
       id: uid("cmp"),
       businessId: fx.business.id,
@@ -779,7 +873,15 @@ export class MockApi implements MarketingApi {
       currency: draft.currency,
       startDate: draft.startDate,
       endDate: draft.endDate,
-      audienceId,
+      audienceId: savedAudience?.id ?? null,
+      audienceSnapshot: savedAudience
+        ? {
+            id: savedAudience.id,
+            name: savedAudience.name,
+            description: savedAudience.description,
+            targeting: clone(savedAudience.targeting),
+          }
+        : null,
       strategy: draft.strategy,
       creativeIds: draft.creativeIds,
       metaCampaignId: null,
@@ -965,9 +1067,89 @@ export class MockApi implements MarketingApi {
     return clone(state.learnings.filter((l) => l.campaignId === id));
   }
 
-  async getAudience(id: string) {
+  async getAudience(id: string): Promise<Audience> {
     await simulate();
-    return clone(findOr404(fx.audiences, id, "Audience"));
+    const saved = findOr404(state.audiences, id, "Audience");
+    return clone({
+      id: saved.id,
+      name: saved.name,
+      description: saved.description,
+      ...saved.targeting,
+      source: saved.source,
+      isArchived: saved.isArchived,
+    });
+  }
+
+  async listAudiences(): Promise<SavedAudience[]> {
+    await simulate();
+    return clone(state.audiences.filter((audience) => !audience.isArchived));
+  }
+
+  async createAudience(raw: SavedAudienceInput): Promise<SavedAudience> {
+    const input = SavedAudienceInputSchema.parse(raw);
+    await simulate();
+    const audience: SavedAudience = {
+      id: uid("aud"),
+      businessId: fx.business.id,
+      name: input.name,
+      description: input.description ?? null,
+      targeting: input.targeting,
+      source: input.source,
+      isArchived: false,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    state.audiences.unshift(audience);
+    return clone(audience);
+  }
+
+  async updateAudience(input: { id: string; patch: Partial<SavedAudienceInput> }): Promise<SavedAudience> {
+    await simulate();
+    const audience = findOr404(state.audiences, input.id, "Audience");
+    Object.assign(audience, input.patch, { updatedAt: now() });
+    return clone(audience);
+  }
+
+  async archiveAudience(id: string): Promise<SavedAudience> {
+    await simulate();
+    const audience = findOr404(state.audiences, id, "Audience");
+    audience.isArchived = true;
+    audience.updatedAt = now();
+    return clone(audience);
+  }
+
+  async suggestAudiences(raw: AudienceSuggestionInput): Promise<AudienceSuggestionResponse> {
+    const input = AudienceSuggestionInputSchema.parse(raw);
+    await simulate({ safe: true });
+    return {
+      suggestions: [
+        {
+          name: "Broad local audience",
+          summary: `Reach broadly within the selected market for “${input.campaignName}”.`,
+          approach: "broad",
+          interestSearchTerms: [],
+          targetingSearchTerms: [],
+          rationale: "A broad option avoids guessing interests; compare it with a validated targeting test.",
+        },
+        {
+          name: "Interest-led test",
+          summary: `Test a small set of relevant interests for “${input.campaignName}”.`,
+          approach: "targeting_hypothesis",
+          interestSearchTerms: [],
+          targetingSearchTerms: input.brief?.toLowerCase().includes("car")
+            ? [
+                { category: "interests", term: "Cars" },
+                { category: "behaviors", term: "Frequent travelers" },
+              ]
+            : [
+                { category: "interests", term: "Shopping" },
+                { category: "job_titles", term: "Business owner" },
+              ],
+          rationale: "These are category-specific search phrases only; select a real Meta result before applying them.",
+        },
+      ],
+      missingInputs: [],
+    };
   }
 
   /* Creatives */
@@ -1331,20 +1513,16 @@ export class MockApi implements MarketingApi {
     await simulate({ safe: true });
     return clone(state.meta);
   }
-  async searchMetaInterests(query: string) {
+  async searchMetaInterests(query: string, category: TargetingCategory) {
     await simulate({ safe: true });
-    const q = query.trim().toLowerCase();
-    const all = [
-      { id: "6003070872673", name: "Golf", audienceSize: 41200000, path: ["Golf"] },
-      { id: "6003139266461", name: "Cars", audienceSize: 98000000, path: ["Vehicles", "Cars"] },
-      { id: "6003266644765", name: "Auto Parts", audienceSize: 12400000, path: ["Vehicles", "Auto Parts"] },
-    ];
     return {
       available: true,
       unavailableReason: null,
-      results: q ? all.filter((i) => i.name.toLowerCase().includes(q)) : [],
+      results: getMockMetaTargetingResults(query, category),
+      hasMore: false,
     };
   }
+
   async connectMeta(): Promise<MetaConnection> {
     throw new ApiError(
       "ADMIN_CONFIGURATION_REQUIRED",
@@ -1713,7 +1891,20 @@ export class MockApi implements MarketingApi {
     }
     connector.hasOverride = connector.fields.some((f) => f.source === "workspace");
     connector.source = connector.hasOverride ? "workspace" : connector.source;
-    connector.configured = connector.fields.filter((f) => f.required).every((f) => f.hasValue || f.value !== null);
+    // Mirror the server's resolution: the provider field decides both whether
+    // this connector is a placeholder and whether it can be "configured" at all.
+    const providerField = connector.fields.find((f) => f.key === "provider");
+    if (providerField) {
+      connector.provider = providerField.value ?? null;
+      connector.placeholder =
+        connector.provider === null || ["mock", "none"].includes(connector.provider);
+    }
+    connector.missingRequired = connector.fields
+      .filter((f) => f.required && !(f.hasValue || f.value !== null))
+      .map((f) => f.key);
+    connector.configured =
+      !connector.placeholder &&
+      connector.fields.filter((f) => f.required).every((f) => f.hasValue || f.value !== null);
     state.connectors.overrideCount = state.connectors.connectors.filter((c) => c.hasOverride).length;
     return clone(connector);
   }

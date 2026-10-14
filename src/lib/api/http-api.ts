@@ -25,6 +25,7 @@ import {
   mapMemoryItem,
   mapMemoryItemList,
   mapMessage,
+  mapMetaAccountCampaignPage,
   mapMetaStatus,
   mapPersona,
   mapRecommendation,
@@ -40,6 +41,11 @@ import {
 import {
   AgentSchema,
   AgentTaskSchema,
+  AudienceSchema,
+  SavedAudienceSchema,
+  SavedAudienceListSchema,
+  SavedAudienceInputSchema,
+  AudienceSuggestionResponseSchema,
   AuditListSchema,
   AuthSessionSchema,
   BrandProfileSchema,
@@ -66,6 +72,7 @@ import {
   MemoryReindexResultSchema,
   MessageSchema,
   MetaConnectionSchema,
+  MetaAccountCampaignPageSchema,
   MetaTargetingSearchSchema,
   MetaAdPlanCreatedSchema,
   MetaAdPlanAssistInputSchema,
@@ -83,6 +90,11 @@ import {
 import type {
   AnalyzeReferenceInput,
   ApplyRecommendationInput,
+  Audience,
+  SavedAudience,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
+  AudienceSuggestionResponse,
   ChatAttachmentUpload,
   AssistantProgressEvent,
   AuditFilters,
@@ -104,12 +116,14 @@ import type {
   MetaAdPlanAssistResponse,
   GeneratedText,
   ListCampaignsInput,
+  ListMetaAccountCampaignsInput,
   ListContentInput,
   ListInsightsInput,
   ListMemoryItemsInput,
   LoginInput,
   MetaAdPlanActivationResponse,
   MetaAdPlanSettings,
+  TargetingCategory,
   LlmSettings,
   LlmSettingsUpdateInput,
   LogoutResult,
@@ -135,6 +149,8 @@ import {
 } from "@/store/auth-store";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const CAMPAIGN_STRATEGY_TIMEOUT_MS = 120_000;
+const AUDIENCE_SUGGESTION_TIMEOUT_MS = 120_000;
 const ASSISTANT_TIMEOUT_MS = 210_000;
 const REFERENCE_ANALYSIS_TIMEOUT_MS = 210_000;
 
@@ -404,9 +420,6 @@ type RawInit = RequestInit & { query?: Record<string, unknown>; timeoutMs?: numb
 export class HttpApi implements MarketingApi {
   constructor(private base = process.env.NEXT_PUBLIC_API_BASE ?? "/api") {}
 
-  /** Request id echoed by the backend on the last response; correlated on the next request. */
-  private lastRequestId: string | null = null;
-
   /** Single in-flight refresh, so N parallel 401s cause exactly one `/auth/refresh`. */
   private refreshInFlight: Promise<AuthSession | null> | null = null;
 
@@ -434,8 +447,6 @@ export class HttpApi implements MarketingApi {
 
     const workspaceId = getActiveWorkspaceId();
     if (workspaceId) headers["X-Workspace-Id"] = workspaceId;
-
-    if (this.lastRequestId) headers["X-Request-Id"] = this.lastRequestId;
 
     // Explicit per-call headers win, but a caller cannot silently drop the token
     // by passing `Authorization: undefined` — `delete` is the only escape hatch
@@ -519,18 +530,23 @@ export class HttpApi implements MarketingApi {
           "request_timeout",
           `The request to ${url} timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS}ms. The backend may still be processing it.`,
           408,
-          { cause, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS },
+          { cause, url, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS },
         );
       }
+      // `fetch` rejects only when no readable HTTP response arrives at all: the
+      // server is down or restarting, the URL/port is wrong, or the browser
+      // blocked the response (CORS). It is *not* proof that the backend is
+      // stopped -- a 500 sent without CORS headers lands here too -- so the
+      // wording stays honest about what is actually known.
       throw new ApiError(
         "network_error",
-        `Could not reach the backend at ${url}. Check that it is running and that the browser can access it.`,
+        `No HTTP response from ${url}. The server may be stopped or restarting, unreachable from this browser, or its response was blocked (CORS). Check the backend log for a request id, then try again.`,
         0,
-        { cause },
+        { cause, url },
       );
     }
-    const requestId = res.headers.get("x-request-id");
-    if (requestId) this.lastRequestId = requestId;
+    // The backend creates a fresh request id when the client does not supply
+    // one. Do not recycle the previous response's id across unrelated calls.
     return res;
   }
 
@@ -557,6 +573,19 @@ export class HttpApi implements MarketingApi {
     if (res.status === 401) {
       // Surface the backend's own generic message verbatim on the login screen.
       return new ApiError(code || "unauthorized", message || "Unauthorized", 401, details);
+    }
+    if (res.status >= 500) {
+      // The backend answers an unhandled failure with `internal_error` and a
+      // request id that its own log line carries. Keep the id with the message:
+      // without it an operator has a user complaint and no way to find the
+      // traceback.
+      const requestId = typeof details?.requestId === "string" ? details.requestId : "";
+      return new ApiError(
+        code || "internal_error",
+        requestId ? `${message} (ref: ${requestId})` : message,
+        res.status,
+        details,
+      );
     }
     return new ApiError(code, message, res.status, details);
   }
@@ -805,6 +834,19 @@ export class HttpApi implements MarketingApi {
     return this.parse(z.array(CampaignSchema), campaigns, "/campaigns");
   }
 
+  async listMetaAccountCampaigns(input?: ListMetaAccountCampaignsInput) {
+    const raw = await this.get("/integrations/meta/campaigns", {
+      q: input?.search,
+      limit: input?.limit ?? 50,
+      after: input?.after,
+    });
+    return this.parse(
+      MetaAccountCampaignPageSchema,
+      mapMetaAccountCampaignPage(raw),
+      "/integrations/meta/campaigns",
+    );
+  }
+
   async getCampaign(id: string) {
     const payload = await this.get(`/campaigns/${id}`);
     return this.parse(CampaignSchema, mapCampaign(payload.campaign, payload), `/campaigns/${id}`);
@@ -866,7 +908,14 @@ export class HttpApi implements MarketingApi {
   }
 
   async generateStrategy(input: GenerateStrategyInput): Promise<GeneratedCampaignStrategy> {
-    const raw = await this.post("/campaigns/strategy", input);
+    // Gemini may internally retry transient 503s; allow this draft-only request
+    // more than the global 30s timeout so the browser does not abandon a request
+    // that the backend is still processing.
+    const raw = await this.raw("/campaigns/strategy", {
+      method: "POST",
+      body: JSON.stringify(input),
+      timeoutMs: CAMPAIGN_STRATEGY_TIMEOUT_MS,
+    });
     return this.parse(GeneratedCampaignStrategySchema, raw, "/campaigns/strategy");
   }
 
@@ -902,8 +951,61 @@ export class HttpApi implements MarketingApi {
     throw unsupported("Campaign learnings", "Learnings are surfaced inside assistant answers.");
   }
 
-  async getAudience(): Promise<never> {
-    throw unsupported("Audience detail", "Campaign audiences are stored as free text in the backend.");
+  async getAudience(id: string): Promise<Audience> {
+    const raw = await this.get(`/audiences/${id}`);
+    const saved = this.parse(SavedAudienceSchema, raw, `/audiences/${id}`);
+    return this.parse(
+      AudienceSchema,
+      {
+        id: saved.id,
+        name: saved.name,
+        description: saved.description,
+        ageMin: saved.targeting.ageMin,
+        ageMax: saved.targeting.ageMax,
+        genders: saved.targeting.genders,
+        locations: saved.targeting.locations,
+        countries: saved.targeting.countries,
+        interests: saved.targeting.interests,
+        interestTargets: saved.targeting.interestTargets,
+        targetingTargets: saved.targeting.targetingTargets.length
+          ? saved.targeting.targetingTargets
+          : saved.targeting.interestTargets.map((target) => ({ ...target, category: "interests" as const })),
+        behaviors: saved.targeting.behaviors,
+        source: saved.source,
+        isArchived: saved.isArchived,
+      },
+      `/audiences/${id}`,
+    );
+  }
+
+  async listAudiences(): Promise<SavedAudience[]> {
+    const raw = await this.get("/audiences");
+    return this.parse(SavedAudienceListSchema, raw, "/audiences").audiences;
+  }
+
+  async createAudience(input: SavedAudienceInput): Promise<SavedAudience> {
+    const payload = SavedAudienceInputSchema.parse(input);
+    const raw = await this.post("/audiences", payload);
+    return this.parse(SavedAudienceSchema, raw, "/audiences");
+  }
+
+  async updateAudience(input: { id: string; patch: Partial<SavedAudienceInput> }): Promise<SavedAudience> {
+    const raw = await this.patch(`/audiences/${input.id}`, input.patch);
+    return this.parse(SavedAudienceSchema, raw, `/audiences/${input.id}`);
+  }
+
+  async archiveAudience(id: string): Promise<SavedAudience> {
+    const raw = await this.raw(`/audiences/${id}`, { method: "DELETE" });
+    return this.parse(SavedAudienceSchema, raw, `/audiences/${id}`);
+  }
+
+  async suggestAudiences(input: AudienceSuggestionInput): Promise<AudienceSuggestionResponse> {
+    const raw = await this.raw("/audiences/suggest", {
+      method: "POST",
+      body: JSON.stringify(input),
+      timeoutMs: AUDIENCE_SUGGESTION_TIMEOUT_MS,
+    });
+    return this.parse(AudienceSuggestionResponseSchema, raw, "/audiences/suggest");
   }
 
   /* ---------------------------------------------------------------- creatives */
@@ -1283,8 +1385,8 @@ export class HttpApi implements MarketingApi {
     return this.parse(MetaConnectionSchema, mapMetaStatus(raw), "/integrations/meta/status");
   }
 
-  async searchMetaInterests(query: string) {
-    const raw = await this.get("/integrations/meta/targeting-search", { q: query });
+  async searchMetaInterests(query: string, category: TargetingCategory) {
+    const raw = await this.get("/integrations/meta/targeting-search", { q: query, category });
     return this.parse(
       MetaTargetingSearchSchema,
       raw,

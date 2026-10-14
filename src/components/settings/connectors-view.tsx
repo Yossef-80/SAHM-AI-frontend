@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Lock, RotateCcw, Save } from "lucide-react";
+import { AlertTriangle, Lock, RotateCcw, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
 import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { useConnectorSettings, useDeleteConnector, useUpdateConnector } from "@/hooks/use-api";
@@ -26,6 +27,18 @@ const connectorPatchKey = (field: string) =>
   field.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
 
 /**
+ * Providers that only return placeholder data.
+ *
+ * The backend refuses to store a credential under one of these (it would never
+ * be read), and this list keeps the form from submitting that request at all --
+ * the user gets the reason next to the field instead of after a round trip.
+ */
+const PLACEHOLDER_PROVIDERS = new Set(["mock", "none"]);
+
+const isPlaceholderProvider = (value: string | null | undefined) =>
+  !value || PLACEHOLDER_PROVIDERS.has(value.trim().toLowerCase());
+
+/**
  * Secrets are write-only by design: the backend returns `value: null` for every
  * `secret: true` field and reports `hasValue`/`masked` instead. So a secret row
  * renders an **empty** password input plus a status line. A field left empty is
@@ -35,18 +48,23 @@ const connectorPatchKey = (field: string) =>
 function FieldRow({
   connector,
   field,
+  providers,
   draft,
   canEdit,
   busy,
+  error,
   onChange,
   onClear,
   labels,
 }: {
   connector: string;
   field: ConnectorField;
+  /** Accepted provider values for this connector; empty when it has no selector. */
+  providers: string[];
   draft: string;
   canEdit: boolean;
   busy: boolean;
+  error?: string;
   onChange: (v: string) => void;
   onClear: () => void;
   labels: { source: (s: string) => string; configured: string; notConfigured: string; inherited: string; required: string };
@@ -54,6 +72,11 @@ function FieldRow({
   const t = useTranslations("connectors");
   const id = `connector-${draftKey(connector, field.key)}`;
   const touched = draft.trim() !== "";
+  // The provider is a closed set on the server, so it is a select here: a
+  // free-text box let "OpenAI" or the model id be typed in, which saved fine and
+  // then left image generation disabled with no explanation.
+  const asSelect = field.key === "provider" && providers.length > 0;
+  const selectValue = draft || (field.value ?? "");
 
   return (
     <div className="space-y-1.5">
@@ -71,7 +94,25 @@ function FieldRow({
         </div>
       </div>
 
-      {field.secret ? (
+      {asSelect ? (
+        <Select
+          value={selectValue}
+          disabled={!canEdit || busy}
+          onValueChange={(value) => onChange(value === "__unset__" ? "" : value)}
+        >
+          <SelectTrigger id={id} aria-label={field.label}>
+            <SelectValue placeholder={t("selectProvider")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__unset__">{t("selectProvider")}</SelectItem>
+            {providers.map((provider) => (
+              <SelectItem key={provider} value={provider}>
+                {provider}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : field.secret ? (
         <Input
           id={id}
           type="password"
@@ -89,6 +130,13 @@ function FieldRow({
           placeholder={field.value ?? ""}
           onChange={(e) => onChange(e.target.value)}
         />
+      )}
+
+      {error && (
+        <p className="flex items-start gap-1.5 text-[11px] font-medium text-destructive">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+          {error}
+        </p>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -127,6 +175,8 @@ function ConnectorCard({
   const remove = useDeleteConnector();
   const te = useTranslations("errors");
   const [draft, setDraft] = useState<Draft>({});
+  /** Set when a save would store a credential the selected provider never reads. */
+  const [fieldError, setFieldError] = useState<string | null>(null);
 
   const busy = update.isPending || remove.isPending;
   const patchKeys = Object.keys(draft);
@@ -135,9 +185,33 @@ function ConnectorCard({
   // Clear local edits whenever the server copy changes (save, refetch, switch).
   useEffect(() => {
     setDraft({});
+    setFieldError(null);
   }, [connector]);
 
+  const providerField = connector.fields.find((f) => f.key === "provider");
+  const effectiveProvider = (draft.provider ?? providerField?.value ?? connector.provider ?? "").trim();
+  const providerIsPlaceholder = Boolean(providerField) && isPlaceholderProvider(effectiveProvider);
+  // Credential fields the user just edited while the provider is still a
+  // placeholder: the backend would store them and never read them.
+  const orphanedCredentials = providerIsPlaceholder
+    ? connector.fields.filter((f) => f.key !== "provider" && f.key in draft)
+    : [];
+  // A stored credential under a placeholder provider is the same mistake made
+  // earlier (or inherited from the environment) — say so instead of leaving a
+  // "saved" badge on a connector that cannot generate anything.
+  const storedCredentials = providerIsPlaceholder
+    ? connector.fields.filter((f) => f.key !== "provider" && (f.hasValue || Boolean(f.value)))
+    : [];
+
   const save = async () => {
+    if (orphanedCredentials.length > 0) {
+      const names = orphanedCredentials.map((f) => f.label).join("، ");
+      setFieldError(
+        t("providerRequired", { provider: effectiveProvider || t("selectProvider"), fields: names }),
+      );
+      return;
+    }
+    setFieldError(null);
     const body: Record<string, string | null> = {};
     for (const [key, value] of Object.entries(draft)) {
       body[connectorPatchKey(key)] = value.trim() === "" ? null : value.trim();
@@ -170,7 +244,14 @@ function ConnectorCard({
             {connector.provider && <CardDescription className="mt-1">{connector.provider}</CardDescription>}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant={connector.configured ? "default" : "outline"}>
+            <Badge
+              variant={connector.configured ? "default" : "outline"}
+              title={
+                !connector.configured && connector.missingRequired.length > 0
+                  ? t("missingRequired", { fields: connector.missingRequired.join(", ") })
+                  : undefined
+              }
+            >
               {connector.configured ? labels.configured : labels.notConfigured}
             </Badge>
             {connector.placeholder && <Badge variant="secondary">{t("placeholder")}</Badge>}
@@ -185,15 +266,29 @@ function ConnectorCard({
             {t("readOnlyRole")}
           </p>
         )}
+        {providerIsPlaceholder && storedCredentials.length > 0 && (
+          <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            {t("orphanedCredentials", {
+              provider: effectiveProvider || t("selectProvider"),
+              fields: storedCredentials.map((f) => f.label).join("، "),
+            })}
+          </p>
+        )}
         {connector.fields.map((field) => (
           <FieldRow
             key={field.key}
             connector={connector.connector}
             field={field}
+            providers={connector.providers}
             draft={draft[field.key] ?? ""}
             canEdit={canEdit}
             busy={busy}
-            onChange={(v) => setDraft((d) => ({ ...d, [field.key]: v }))}
+            error={field.key === "provider" ? (fieldError ?? undefined) : undefined}
+            onChange={(v) => {
+              setFieldError(null);
+              setDraft((d) => ({ ...d, [field.key]: v }));
+            }}
             onClear={() => setDraft((d) => ({ ...d, [field.key]: "" }))}
             labels={labels}
           />

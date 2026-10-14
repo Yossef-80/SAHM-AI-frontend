@@ -35,6 +35,21 @@ export function describeError(error: unknown, t: Translate): string {
     return error instanceof Error ? error.message : t("generic");
   }
   switch (error.code) {
+    case "network_error": {
+      // No readable response arrived. Say exactly that: the old copy claimed the
+      // backend was not running, which was wrong whenever the server had in fact
+      // answered but the browser could not read the response.
+      const url = typeof error.details?.url === "string" ? error.details.url : "";
+      return url ? t("networkError", { url }) : t("networkErrorNoUrl");
+    }
+    case "request_timeout":
+      return t("requestTimeout");
+    case "internal_error": {
+      // A 5xx is a bug on the server, not something the user did; the one thing
+      // they can act on is quoting the request id from the backend log.
+      const ref = typeof error.details?.requestId === "string" ? error.details.requestId : "";
+      return ref ? t("serverError", { ref }) : t("serverErrorNoRef");
+    }
     case "rate_limited": {
       const seconds = retryAfterSeconds(error);
       return seconds !== undefined ? t("rateLimited", { seconds }) : t("rateLimitedUnknown");

@@ -21,7 +21,7 @@
  * is cheap to reason about and easy to test.
  */
 
-import { ActionTypeSchema, MEMORY_KINDS } from "@/types";
+import { ActionTypeSchema, AudienceTargetingSchema, CampaignAudienceSnapshotSchema, MEMORY_KINDS, TargetingCategorySchema } from "@/types";
 import type {
   ActionType,
   Agent,
@@ -53,6 +53,7 @@ import type {
   Message,
   MessageBlock,
   MetaConnection,
+  MetaAccountCampaignPage,
   Recommendation,
   ReferenceAnalysis,
   Role,
@@ -241,6 +242,57 @@ export function mapBrandProfile(profile: Json): BrandProfile {
 /* Campaigns                                                                  */
 /* -------------------------------------------------------------------------- */
 
+function mapCampaignAudienceSnapshot(raw: unknown) {
+  if (!isRecord(raw)) return null;
+  const source = isRecord(raw.targeting) ? raw.targeting : {};
+  const list = (value: unknown) => asArray(value).map((item) => str(item)).filter(Boolean);
+  const genders = list(source.genders).filter((value) => value === "all" || value === "male" || value === "female");
+  const rawTargetingTargets = asArray(source.targetingTargets ?? source.targeting_targets);
+  const parsedTargetingTargets = rawTargetingTargets.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const id = str(item.id);
+    const name = str(item.name);
+    if (!id || !name) return [];
+    const rawCategory = item.category;
+    if (rawCategory === undefined || rawCategory === null || rawCategory === "") {
+      return [{ id, name, category: "interests" as const }];
+    }
+    const category = TargetingCategorySchema.safeParse(rawCategory);
+    return category.success ? [{ id, name, category: category.data }] : [];
+  });
+  const legacyInterestTargets = asArray(source.interestTargets ?? source.interest_targets).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const id = str(item.id);
+    const name = str(item.name);
+    return id && name ? [{ id, name }] : [];
+  });
+  const interestTargets = legacyInterestTargets.length
+    ? legacyInterestTargets
+    : parsedTargetingTargets
+        .filter((item) => item.category === "interests")
+        .map(({ id, name }) => ({ id, name }));
+  const targetingTargets = parsedTargetingTargets.length
+    ? parsedTargetingTargets
+    : interestTargets.map(({ id, name }) => ({ id, name, category: "interests" as const }));
+  const targeting = AudienceTargetingSchema.parse({
+    ageMin: num(source.ageMin ?? source.age_min, 18),
+    ageMax: num(source.ageMax ?? source.age_max, 65),
+    genders: genders.length ? genders : ["all"],
+    locations: list(source.locations),
+    countries: list(source.countries),
+    interests: list(source.interests),
+    interestTargets,
+    targetingTargets,
+    behaviors: list(source.behaviors),
+  });
+  return CampaignAudienceSnapshotSchema.parse({
+    id: str(raw.id),
+    name: str(raw.name, "Saved audience"),
+    description: nullableStr(raw.description),
+    targeting,
+  });
+}
+
 export function mapCampaign(raw: Json, detail?: Json): Campaign {
   const creatives = asArray(detail?.creatives);
   const creativeIds = creatives.map((c) => str(c.id)).filter(Boolean);
@@ -269,7 +321,8 @@ export function mapCampaign(raw: Json, detail?: Json): Campaign {
     currency: mapCurrency(raw.currency),
     startDate: iso(raw.startDate ?? raw.createdAt),
     endDate: opt(raw.endDate) ? iso(raw.endDate) : null,
-    audienceId: ((nullableStr(raw.targetAudience) ?? undefined)) ?? null,
+    audienceId: nullableStr(raw.audienceId ?? raw.audience_id),
+    audienceSnapshot: mapCampaignAudienceSnapshot(raw.audienceSnapshot ?? raw.audience_snapshot),
     strategy: null,
     creativeIds: creativeIds.length ? creativeIds : [],
     metaCampaignId: nullableStr(raw.metaCampaignId),
@@ -295,6 +348,7 @@ export function toCampaignCreateBody(draft: Json): Json {
     startDate: iso(draft.startDate),
     endDate: draft.endDate ? iso(draft.endDate) : null,
     targetAudience: audienceLabel || null,
+    audienceId: nullableStr(audience.id),
     notes: null,
   };
 }
@@ -857,6 +911,36 @@ export function mapConversationDetail(raw: Json): { conversation: Conversation; 
 /* Meta integration                                                           */
 /* -------------------------------------------------------------------------- */
 
+export function mapMetaAccountCampaignPage(raw: Json): MetaAccountCampaignPage {
+  const rawStatus = str(raw.status).toLowerCase();
+  const status = rawStatus === "ok" || rawStatus === "partial" ? rawStatus : "unavailable";
+  const campaigns = asArray(raw.campaigns).flatMap((row) => {
+    if (!isRecord(row)) return [];
+    const metaCampaignId = str(row.metaCampaignId ?? row.meta_campaign_id);
+    if (!metaCampaignId) return [];
+    return [{
+      metaCampaignId,
+      name: str(row.name),
+      objective: nullableStr(row.objective),
+      status: nullableStr(row.status),
+      effectiveStatus: nullableStr(row.effectiveStatus ?? row.effective_status),
+      createdTime: nullableStr(row.createdTime ?? row.created_time),
+      startTime: nullableStr(row.startTime ?? row.start_time),
+      stopTime: nullableStr(row.stopTime ?? row.stop_time),
+    }];
+  });
+  return {
+    status,
+    source: str(raw.source, "meta_marketing_api"),
+    unavailableReason: nullableStr(raw.unavailableReason ?? raw.unavailable_reason),
+    accountId: nullableStr(raw.accountId ?? raw.account_id),
+    campaigns,
+    hasMore: bool(raw.hasMore ?? raw.has_more),
+    nextCursor: nullableStr(raw.nextCursor ?? raw.next_cursor),
+    retrievedAt: nullableStr(raw.retrievedAt ?? raw.retrieved_at),
+  };
+}
+
 export function mapMetaStatus(raw: Json): MetaConnection {
   const connected = bool(raw.connected);
   const campaignReady = bool(raw.campaignReady);
@@ -1072,6 +1156,9 @@ export function mapConnector(raw: Json): Connector {
     hasOverride: bool(raw.hasOverride, false),
     configured: bool(raw.configured, false),
     provider: nullableStr(raw.provider),
+    // Server-provided provider choices; empty for a connector with no selector.
+    providers: asArray(raw.providers).map((value) => str(value)).filter(Boolean),
+    missingRequired: asArray(raw.missingRequired).map((value) => str(value)).filter(Boolean),
     placeholder: bool(raw.placeholder, false),
     fields: asArray(raw.fields).map(mapConnectorField),
     notes: str(raw.notes),

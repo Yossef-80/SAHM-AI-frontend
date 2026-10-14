@@ -87,9 +87,28 @@ export function StrategyTab({ campaign: c }: { campaign: Campaign }) {
 export function AudienceTab({ campaign: c }: { campaign: Campaign }) {
   const t = useTranslations("campaigns.audience");
   const locale = useLocale();
-  const q = useAudience(c.audienceId);
+  // Prefer the creation-time snapshot so later library edits never rewrite campaign history.
+  const snapshot = c.audienceSnapshot
+    ? {
+        id: c.audienceSnapshot.id,
+        name: c.audienceSnapshot.name,
+        description: c.audienceSnapshot.description,
+        estimatedReach: c.audienceSnapshot.estimatedReach,
+        ...c.audienceSnapshot.targeting,
+      }
+    : null;
+  const q = useAudience(snapshot ? null : c.audienceId);
+  const audience = snapshot ?? (c.audienceId ? q.data ?? null : null);
   return (
-    <AsyncBoundary isLoading={q.isLoading} isPending={Boolean(c.audienceId) && q.isPending} isError={q.isError} error={q.error} data={c.audienceId ? q.data : null} onRetry={() => q.refetch()} emptyTitle={t("empty")}>
+    <AsyncBoundary
+      isLoading={!snapshot && Boolean(c.audienceId) && q.isLoading}
+      isPending={!snapshot && Boolean(c.audienceId) && q.isPending}
+      isError={!snapshot && q.isError}
+      error={snapshot ? undefined : q.error}
+      data={audience}
+      onRetry={() => q.refetch()}
+      emptyTitle={t("empty")}
+    >
       {(a) => (
         <Card>
           <CardHeader>
