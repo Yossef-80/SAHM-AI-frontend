@@ -1477,6 +1477,13 @@ export const ConnectorFieldSchema = z.object({
   required: z.boolean().default(false),
   maxLength: z.number().int().default(500),
   description: z.string().default(""),
+  /**
+   * Accepted values when the backend declares this field a closed set; empty for
+   * free text. Rendered as a `<select>`, for the same reason `providers` is:
+   * `"HGIH"` used to save without complaint and then behave exactly like an
+   * unset quality.
+   */
+  choices: z.array(z.string()).default([]),
   value: z.string().nullable().default(null),
   hasValue: z.boolean().default(false),
   masked: z.string().nullable().default(null),
@@ -1551,10 +1558,18 @@ export const LlmProviderSchema = z.enum([
 ]);
 export type LlmProvider = z.infer<typeof LlmProviderSchema>;
 
+export const LlmReasoningEffortSchema = z.enum(["none", "low", "medium", "high"]);
+export type LlmReasoningEffort = z.infer<typeof LlmReasoningEffortSchema>;
+
 export const LlmTierSettingsSchema = z.object({
   provider: LlmProviderSchema,
   model: z.string(),
   baseUrl: z.string().nullable().default(null),
+  /** Output ceiling. `null` = the server's process default, shown as such. */
+  maxTokens: z.number().int().nullable().default(null),
+  temperature: z.number().nullable().default(null),
+  /** OpenAI reasoning models only; `none` is what enables tools on Chat Completions. */
+  reasoningEffort: LlmReasoningEffortSchema.nullable().default(null),
   keyConfigured: z.boolean().default(false),
   keySource: z.enum(["workspace", "environment", "missing"]).default("missing"),
   extraHeadersConfigured: z.boolean().default(false),
@@ -1577,6 +1592,10 @@ export const LlmTierUpdateInputSchema = z.object({
   apiKey: z.string().nullable().optional(),
   baseUrl: z.string().max(500).nullable().optional(),
   extraHeaders: z.record(z.string(), z.string()).nullable().optional(),
+  /** `null` clears the override and returns the tier to the process default. */
+  maxTokens: z.number().int().min(1).max(1_000_000).nullable().optional(),
+  temperature: z.number().min(0).max(2).nullable().optional(),
+  reasoningEffort: LlmReasoningEffortSchema.nullable().optional(),
 });
 export type LlmTierUpdateInput = z.infer<typeof LlmTierUpdateInputSchema>;
 

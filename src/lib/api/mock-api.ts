@@ -682,8 +682,8 @@ function upsertConversation(input: SendMessageInput): Conversation {
 export class MockApi implements MarketingApi {
   private llmSettings: LlmSettings = {
     businessId: state.connectors.businessId,
-    fast: { provider: "mock", model: "mock-fast-1", baseUrl: null, keyConfigured: false, keySource: "missing", extraHeadersConfigured: false, extraHeadersSource: "missing" },
-    strong: { provider: "mock", model: "mock-strong-1", baseUrl: null, keyConfigured: false, keySource: "missing", extraHeadersConfigured: false, extraHeadersSource: "missing" },
+    fast: { provider: "mock", model: "mock-fast-1", baseUrl: null, maxTokens: null, temperature: null, reasoningEffort: null, keyConfigured: false, keySource: "missing", extraHeadersConfigured: false, extraHeadersSource: "missing" },
+    strong: { provider: "mock", model: "mock-strong-1", baseUrl: null, maxTokens: null, temperature: null, reasoningEffort: null, keyConfigured: false, keySource: "missing", extraHeadersConfigured: false, extraHeadersSource: "missing" },
     hasWorkspaceOverride: false,
     encryptionKeyConfigured: true,
   };
@@ -1941,6 +1941,12 @@ export class MockApi implements MarketingApi {
         provider: patch.provider ?? current.provider,
         model: patch.model ?? current.model,
         baseUrl: patch.baseUrl ?? current.baseUrl,
+        // `null` is a real value here ("remove my override"), so the fallback
+        // only applies when the key is absent from the patch entirely.
+        maxTokens: "maxTokens" in patch ? (patch.maxTokens ?? null) : current.maxTokens,
+        temperature: "temperature" in patch ? (patch.temperature ?? null) : current.temperature,
+        reasoningEffort:
+          "reasoningEffort" in patch ? (patch.reasoningEffort ?? null) : current.reasoningEffort,
         keyConfigured: patch.apiKey === null ? false : patch.apiKey ? true : current.keyConfigured,
         keySource: patch.apiKey === null ? "missing" : patch.apiKey ? "workspace" : current.keySource,
         extraHeadersConfigured: patch.extraHeaders === null ? false : patch.extraHeaders ? Object.keys(patch.extraHeaders).length > 0 : current.extraHeadersConfigured,

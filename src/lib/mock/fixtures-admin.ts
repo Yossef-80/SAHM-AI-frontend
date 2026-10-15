@@ -166,19 +166,25 @@ const field = (
   key: string,
   label: string,
   opts: Partial<Omit<Connector["fields"][number], "key" | "label">> = {},
-): Connector["fields"][number] => ({
-  key,
-  label,
-  secret: false,
-  required: false,
-  maxLength: 500,
-  description: "",
-  value: null,
-  hasValue: false,
-  masked: null,
-  source: "unset",
-  ...opts,
-});
+): Connector["fields"][number] => {
+  // `choices` is destructured out so the spread below cannot widen it back to
+  // `string[] | undefined`; a field with a closed set needs the array present.
+  const { choices, ...rest } = opts;
+  return {
+    key,
+    label,
+    secret: false,
+    required: false,
+    maxLength: 500,
+    description: "",
+    choices: choices ?? [],
+    value: null,
+    hasValue: false,
+    masked: null,
+    source: "unset",
+    ...rest,
+  };
+};
 
 export const mockConnectors: Connector[] = [
   {
@@ -254,6 +260,13 @@ export const mockConnectors: Connector[] = [
       field("provider", "Provider", { value: "mock", source: "default", maxLength: 30 }),
       field("apiKey", "API key", { secret: true, source: "unset" }),
       field("model", "Model", { value: "sahm-imagen-v1", source: "default", maxLength: 80 }),
+      field("quality", "Quality", {
+        value: "auto",
+        source: "default",
+        maxLength: 16,
+        choices: ["auto", "low", "medium", "high"],
+        description: "How much effort the image model spends. GPT Image models only.",
+      }),
     ],
   },
   {

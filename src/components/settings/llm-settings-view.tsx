@@ -16,17 +16,51 @@ import { useLlmSettings, useUpdateLlmSettings } from "@/hooks/use-api";
 import type { LlmProvider, LlmTierSettings, LlmTierUpdateInput } from "@/types";
 
 type TierName = "fast" | "strong";
-type Draft = { provider: LlmProvider; model: string; baseUrl: string; apiKey: string; headers: string; clearKey: boolean; clearHeaders: boolean };
+type Draft = {
+  provider: LlmProvider;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  headers: string;
+  clearKey: boolean;
+  clearHeaders: boolean;
+  // Kept as strings so an empty box is distinguishable from a typed 0, which is
+  // a valid temperature and a meaningless token ceiling.
+  maxTokens: string;
+  temperature: string;
+  reasoningEffort: string;
+};
 
 function createDraft(value: LlmTierSettings): Draft {
-  return { provider: value.provider, model: value.model, baseUrl: value.baseUrl ?? "", apiKey: "", headers: "", clearKey: false, clearHeaders: false };
+  return {
+    provider: value.provider,
+    model: value.model,
+    baseUrl: value.baseUrl ?? "",
+    apiKey: "",
+    headers: "",
+    clearKey: false,
+    clearHeaders: false,
+    maxTokens: value.maxTokens === null ? "" : String(value.maxTokens),
+    temperature: value.temperature === null ? "" : String(value.temperature),
+    reasoningEffort: value.reasoningEffort ?? "",
+  };
 }
 
 function TierCard({ name, value, onSave, busy }: { name: TierName; value: LlmTierSettings; onSave: (patch: LlmTierUpdateInput) => Promise<void>; busy: boolean }) {
   const t = useTranslations("llm");
   const [draft, setDraft] = useState(() => createDraft(value));
   useEffect(() => setDraft(createDraft(value)), [value]);
-  const dirty = draft.provider !== value.provider || draft.model !== value.model || draft.baseUrl !== (value.baseUrl ?? "") || Boolean(draft.apiKey) || draft.clearKey || Boolean(draft.headers) || draft.clearHeaders;
+  const dirty =
+    draft.provider !== value.provider ||
+    draft.model !== value.model ||
+    draft.baseUrl !== (value.baseUrl ?? "") ||
+    Boolean(draft.apiKey) ||
+    draft.clearKey ||
+    Boolean(draft.headers) ||
+    draft.clearHeaders ||
+    draft.maxTokens.trim() !== (value.maxTokens === null ? "" : String(value.maxTokens)) ||
+    draft.temperature.trim() !== (value.temperature === null ? "" : String(value.temperature)) ||
+    draft.reasoningEffort !== (value.reasoningEffort ?? "");
   const patch = async () => {
     if (!draft.model.trim()) {
       toast.error(t("modelRequired"));
@@ -38,6 +72,19 @@ function TierCard({ name, value, onSave, busy }: { name: TierName; value: LlmTie
     }
     if (draft.provider === "custom" && !draft.baseUrl.trim()) {
       toast.error(t("customBaseUrlRequired"));
+      return;
+    }
+    // Parsed here so a bad value is a message next to the form rather than a
+    // 422 the user has to read out of the network tab.
+    const maxTokensRaw = draft.maxTokens.trim();
+    const temperatureRaw = draft.temperature.trim();
+    const maxTokens = maxTokensRaw === "" ? null : Number(maxTokensRaw);
+    const temperature = temperatureRaw === "" ? null : Number(temperatureRaw);
+    if (
+      (maxTokens !== null && (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 1_000_000)) ||
+      (temperature !== null && (!Number.isFinite(temperature) || temperature < 0 || temperature > 2))
+    ) {
+      toast.error(t("samplingInvalid"));
       return;
     }
     let extraHeaders: Record<string, string> | null | undefined;
@@ -59,6 +106,11 @@ function TierCard({ name, value, onSave, busy }: { name: TierName; value: LlmTie
       ...(draft.apiKey ? { apiKey: draft.apiKey } : {}),
       ...(draft.clearKey ? { apiKey: null } : {}),
       ...(extraHeaders !== undefined ? { extraHeaders } : {}),
+      // Always sent, including as null: an empty box means "remove my override",
+      // which is a different request from "do not touch this field".
+      maxTokens,
+      temperature,
+      reasoningEffort: draft.reasoningEffort === "" ? null : (draft.reasoningEffort as LlmTierUpdateInput["reasoningEffort"]),
     };
     await onSave(body);
   };
@@ -99,6 +151,48 @@ function TierCard({ name, value, onSave, busy }: { name: TierName; value: LlmTie
           <Input type="password" autoComplete="new-password" value={draft.apiKey} onChange={(e) => setDraft((d) => ({ ...d, apiKey: e.target.value, clearKey: false }))} placeholder={value.keySource === "workspace" ? t("keyAlreadySet") : t("keyPlaceholder")} />
           <p className="text-xs text-muted-foreground">{keySourceLabel}. {t("keyStorage")}</p>
           {value.keySource === "workspace" && <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setDraft((d) => ({ ...d, apiKey: "", clearKey: true }))}>{draft.clearKey ? t("keyWillClear") : t("clearKey")}</Button>}
+        </div>
+        <div className="space-y-1.5">
+          <Label>{t("maxTokens")}</Label>
+          <Input
+            inputMode="numeric"
+            value={draft.maxTokens}
+            onChange={(e) => setDraft((d) => ({ ...d, maxTokens: e.target.value }))}
+            placeholder={t("maxTokensPlaceholder")}
+          />
+          <p className="text-xs text-muted-foreground">{t("maxTokensHint")}</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>{t("temperature")}</Label>
+          <Input
+            inputMode="decimal"
+            value={draft.temperature}
+            onChange={(e) => setDraft((d) => ({ ...d, temperature: e.target.value }))}
+            placeholder={t("temperaturePlaceholder")}
+          />
+          <p className="text-xs text-muted-foreground">{t("temperatureHint")}</p>
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>{t("reasoningEffort")}</Label>
+          <Select
+            value={draft.reasoningEffort || "__default__"}
+            onValueChange={(effort) =>
+              setDraft((d) => ({ ...d, reasoningEffort: effort === "__default__" ? "" : effort }))
+            }
+          >
+            <SelectTrigger aria-label={t("reasoningEffort")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">{t("reasoningEffortDefault")}</SelectItem>
+              {(["none", "low", "medium", "high"] as const).map((effort) => (
+                <SelectItem key={effort} value={effort}>
+                  {effort === "none" ? t("effortNone") : effort === "low" ? t("effortLow") : effort === "medium" ? t("effortMedium") : t("effortHigh")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t("reasoningEffortHint")}</p>
         </div>
         {draft.provider !== "mock" && (
           <>

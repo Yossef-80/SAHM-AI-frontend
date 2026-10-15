@@ -341,6 +341,20 @@ function getMetaPlanRecoveryAction(
   return null;
 }
 
+/**
+ * Which recorded step a safe continuation actually restarts from.
+ *
+ * `getMetaPlanRecoveryAction` returns "resume" for two different histories: the
+ * ad set was never created, or it exists and only the first creative was
+ * refused. The copy has to match -- telling a user whose ad set is already on
+ * Meta that "this continues at ad set creation" reads as a promise to create a
+ * second one.
+ */
+function getResumeStage(result: MetaAdPlanApprovalResponse | null): "ad_set" | "creative" {
+  const step = result?.recommendation.executionResult?.attempted_step;
+  return typeof step === "string" && step.startsWith("creative:") ? "creative" : "ad_set";
+}
+
 export function CampaignWizard() {
   const t = useTranslations("campaigns.wizard");
   const tc = useTranslations("common");
@@ -1747,7 +1761,13 @@ export function CampaignWizard() {
                           {recoveryAction && !retryReview && (
                             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                               <p className="text-xs text-muted-foreground">
-                                {t(recoveryAction === "resume" ? "launch.resumeSafeHint" : "launch.retrySafeHint")}
+                                {t(
+                                  recoveryAction === "resume"
+                                    ? getResumeStage(planExecution) === "creative"
+                                      ? "launch.resumeCreativeHint"
+                                      : "launch.resumeSafeHint"
+                                    : "launch.retrySafeHint",
+                                )}
                               </p>
                               <Button
                                 type="button"

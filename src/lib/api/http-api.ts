@@ -153,6 +153,15 @@ const CAMPAIGN_STRATEGY_TIMEOUT_MS = 120_000;
 const AUDIENCE_SUGGESTION_TIMEOUT_MS = 120_000;
 const ASSISTANT_TIMEOUT_MS = 210_000;
 const REFERENCE_ANALYSIS_TIMEOUT_MS = 210_000;
+/**
+ * Image generation is the slowest request the app makes: the provider call alone
+ * ran ~50s in a live deployment (a 56.6s request where the database accounted
+ * for 3s), and the 30s default aborted the fetch while the backend went on to
+ * answer 200 at 56s. The user saw "the request took too long" for an image that
+ * *had* been generated and saved -- and the obvious next step, retrying, pays
+ * the provider twice. The ceiling exists to catch a hung server, not a slow one.
+ */
+const CREATIVE_GENERATION_TIMEOUT_MS = 180_000;
 
 /** Supabase access tokens are JWTs; legacy backend sessions are opaque strings. */
 function isSupabaseJwt(token: string | null): boolean {
@@ -1050,13 +1059,19 @@ export class HttpApi implements MarketingApi {
   }
 
   async generateCreative(input: GenerateCreativeInput) {
-    const payload = await this.post("/creatives/generate", {
-      prompt: input.brief,
-      aspectRatio: input.aspectRatio ?? "1:1",
-      campaignId: input.campaignId,
-      numImages: Math.min(4, Math.max(1, input.count)),
-      referenceAnalysisId: input.referenceAnalysisId,
-      referenceImageUrl: input.referenceImageUrl,
+    const payload = await this.raw<Json>("/creatives/generate", {
+      method: "POST",
+      // A timeout here would abort a generation the provider is already being
+      // paid for, so this endpoint gets its own, generous ceiling.
+      timeoutMs: CREATIVE_GENERATION_TIMEOUT_MS,
+      body: JSON.stringify({
+        prompt: input.brief,
+        aspectRatio: input.aspectRatio ?? "1:1",
+        campaignId: input.campaignId,
+        numImages: Math.min(4, Math.max(1, input.count)),
+        referenceAnalysisId: input.referenceAnalysisId,
+        referenceImageUrl: input.referenceImageUrl,
+      }),
     });
     // The backend answers 200 with `assets: []` when the image provider is not
     // configured or refuses. Surfacing that as an error is the difference between

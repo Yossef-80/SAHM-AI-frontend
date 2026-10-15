@@ -34,7 +34,7 @@
     "schemaMismatch": "The server returned data this app cannot read. Check that the frontend and backend versions match.",
     "networkError": "No response arrived from the server at {url}. It may be stopped or restarting, unreachable from this browser, or the browser blocked the response. Check the backend log for a request id, then try again.",
     "networkErrorNoUrl": "No response arrived from the server. It may be stopped or restarting, or unreachable from this browser. Check the backend log, then try again.",
-    "requestTimeout": "The request took longer than allowed before any response arrived. The server may still be working on it — wait a moment before retrying.",
+    "requestTimeout": "The request took longer than allowed before any response arrived. The server may still be working on it — open the list or page and check first, since it may have finished, then decide whether to retry.",
     "serverError": "The server hit an internal error. Quote reference {ref} to support so the log can be checked.",
     "serverErrorNoRef": "The server hit an internal error. Check the backend log for the cause, then try again."
   },
@@ -623,6 +623,7 @@
         "retrySafeHint": "The failed attempt created no Meta objects. This retries with the saved campaign details.",
         "resumeMetaCreation": "Review safe continuation",
         "resumeSafeHint": "The campaign already exists on Meta in PAUSED state. This continues at ad set creation without creating a duplicate campaign.",
+        "resumeCreativeHint": "The campaign and ad set already exist on Meta in PAUSED state. This continues at creative and ad creation without recreating either.",
         "confirmResume": "Confirm continuation",
         "fields": {
           "pageId": "Meta Page ID",
@@ -985,7 +986,8 @@
     "selectProvider": "— choose a provider —",
     "providerRequired": "The selected provider ({provider}) returns placeholder data only, so the values you entered would never be read. Choose a real provider (for example openai) and save — nothing was saved just now: {fields}",
     "orphanedCredentials": "⚠ {fields} are stored, but the provider \"{provider}\" never reads them. This connector cannot work until you select a real provider and save.",
-    "missingRequired": "Missing required fields: {fields}"
+    "missingRequired": "Missing required fields: {fields}",
+    "selectOption": "— use the default —"
   },
   "llm": {
     "title": "Language models",
@@ -1039,7 +1041,21 @@
     "save": "Save tier",
     "saving": "Saving…",
     "saved": "LLM settings saved",
-    "saveFailed": "Could not save LLM settings"
+    "saveFailed": "Could not save LLM settings",
+    "maxTokens": "Max output tokens",
+    "maxTokensPlaceholder": "Server default",
+    "maxTokensHint": "Ceiling for one reply. Leave empty to use the server default. On reasoning models this budget also covers the model's own thinking.",
+    "temperature": "Temperature",
+    "temperaturePlaceholder": "Server default",
+    "temperatureHint": "0 is factual, 1 is more varied. Reasoning models ignore it automatically, since they only accept their own default.",
+    "reasoningEffort": "Reasoning effort",
+    "reasoningEffortDefault": "— model default —",
+    "effortNone": "None (fastest)",
+    "effortLow": "Low",
+    "effortMedium": "Medium",
+    "effortHigh": "High",
+    "reasoningEffortHint": "OpenAI reasoning models only. \"None\" is what allows these models to call tools in chat, so leave it there if you are unsure.",
+    "samplingInvalid": "Max tokens must be a whole number above 0, and temperature between 0 and 2."
   },
   "memory": {
     "title": "Brand memory",

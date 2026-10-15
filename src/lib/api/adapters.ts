@@ -1139,6 +1139,9 @@ export function mapConnectorField(raw: Json): ConnectorField {
     required: bool(raw.required, false),
     maxLength: num(raw.maxLength, 500),
     description: str(raw.description),
+    // A field with a closed set renders as a select; a response that omits the
+    // list (older backend) degrades to the free-text input instead of throwing.
+    choices: asArray(raw.choices).map((choice) => String(choice)),
     // Defence in depth: the backend already nulls every secret, but a form that
     // pre-fills a secret is a leak, so the mask is never promoted to a value here.
     value: secret ? null : (nullableStr(raw.value)),

@@ -254,14 +254,31 @@ export const actionRegistry = {
         );
       }
       if (payload.brief) {
-        const created = await ctx.api.generateCreative({
-          kind: "image",
-          brief: payload.brief,
-          campaignId: payload.campaignId ?? null,
-          referenceAnalysisId: payload.referenceAnalysisId,
-          aspectRatio: payload.aspectRatio,
-          count: payload.count ?? 1,
-        });
+        let created;
+        try {
+          created = await ctx.api.generateCreative({
+            kind: "image",
+            brief: payload.brief,
+            campaignId: payload.campaignId ?? null,
+            referenceAnalysisId: payload.referenceAnalysisId,
+            aspectRatio: payload.aspectRatio,
+            count: payload.count ?? 1,
+          });
+        } catch (error) {
+          // A timeout or a lost connection does not mean nothing happened: the
+          // backend keeps working after the browser stops waiting, and a live
+          // 56s generation ended in a persisted creative the user never saw.
+          // Refresh the list so a finished asset appears instead of existing
+          // only in the database -- and so the user does not pay for a second
+          // one by retrying blind.
+          if (
+            error instanceof ApiError &&
+            (error.code === "request_timeout" || error.code === "network_error")
+          ) {
+            await invalidate(ctx.queryClient, [["creatives"]]);
+          }
+          throw error;
+        }
         await invalidate(ctx.queryClient, [["creatives"]]);
         return { ok: true, toastKey: "toast.creativesGenerated", toastValues: { count: created.length }, navigateTo: "/creatives", data: created };
       }

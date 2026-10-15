@@ -76,6 +76,10 @@ function FieldRow({
   // free-text box let "OpenAI" or the model id be typed in, which saved fine and
   // then left image generation disabled with no explanation.
   const asSelect = field.key === "provider" && providers.length > 0;
+  // Any field the backend declares a closed set is a select too, so a value the
+  // API would reject cannot be typed at all. `__unset__` is the sentinel because
+  // Radix refuses an empty string; it maps back to "" (omit) on change.
+  const asChoiceSelect = field.choices.length > 0;
   const selectValue = draft || (field.value ?? "");
 
   return (
@@ -108,6 +112,24 @@ function FieldRow({
             {providers.map((provider) => (
               <SelectItem key={provider} value={provider}>
                 {provider}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : asChoiceSelect ? (
+        <Select
+          value={selectValue}
+          disabled={!canEdit || busy}
+          onValueChange={(value) => onChange(value === "__unset__" ? "" : value)}
+        >
+          <SelectTrigger id={id} aria-label={field.label}>
+            <SelectValue placeholder={field.value ?? ""} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__unset__">{t("selectOption")}</SelectItem>
+            {field.choices.map((choice) => (
+              <SelectItem key={choice} value={choice}>
+                {choice}
               </SelectItem>
             ))}
           </SelectContent>
