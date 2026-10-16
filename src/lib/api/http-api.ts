@@ -86,6 +86,8 @@ import {
   SessionInfoSchema,
   SettingsSchema,
   UsageSchema,
+  SaveGeneratedTextInputSchema,
+  UpdateCreativeTextInputSchema,
 } from "@/types";
 import type {
   AnalyzeReferenceInput,
@@ -107,6 +109,7 @@ import type {
   ConnectorSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
+  Creative,
   GenerateContentCalendarInput,
   GenerateCreativeInput,
   GenerateStrategyInput,
@@ -129,6 +132,7 @@ import type {
   LogoutResult,
   MetricPoint,
   RegisterInput,
+  SaveGeneratedTextInput,
   SendMessageInput,
   SendMessageOutput,
   SessionInfo,
@@ -137,6 +141,7 @@ import type {
   UpdateAgentInput,
   UpdateCampaignInput,
   UpdateContentItemInput,
+  UpdateCreativeTextInput,
   UpdateMemoryItemInput,
   Usage,
   UsagePeriod,
@@ -1068,7 +1073,11 @@ export class HttpApi implements MarketingApi {
         prompt: input.brief,
         aspectRatio: input.aspectRatio ?? "1:1",
         campaignId: input.campaignId,
-        numImages: Math.min(4, Math.max(1, input.count)),
+        // One image per render, sent explicitly: the backend caps a paid render
+        // to a single asset, and asking for more only made the promise and the
+        // result differ. `input.count` is accepted for compatibility and
+        // deliberately ignored here as well as server-side.
+        numImages: 1,
         referenceAnalysisId: input.referenceAnalysisId,
         referenceImageUrl: input.referenceImageUrl,
       }),
@@ -1201,8 +1210,14 @@ export class HttpApi implements MarketingApi {
     return this.parse(z.array(ConversationSchema), list, "/assistant/conversations");
   }
 
-  async getConversation(id: string) {
-    const detail = await this.get(`/assistant/conversations/${id}`);
+  async getConversation(id: string, options?: { limit?: number; before?: string }) {
+    // The backend pages message history now; ask for a bounded window instead of
+    // "everything this conversation ever said".
+    const query = new URLSearchParams();
+    if (options?.limit) query.set("limit", String(options.limit));
+    if (options?.before) query.set("before", options.before);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const detail = await this.get(`/assistant/conversations/${id}${suffix}`);
     const mapped = mapConversationDetail(detail);
     const messages = this.parse(z.array(MessageSchema), mapped.messages, `/assistant/conversations/${id}`);
     const conversation = this.parse(ConversationSchema, mapped.conversation, `/assistant/conversations/${id}`);
@@ -1491,6 +1506,33 @@ export class HttpApi implements MarketingApi {
       createdAt: str(row.createdAt, new Date().toISOString()),
     };
     return this.parse(GeneratedTextSchema, generated, "/creatives/generate-text");
+  }
+
+  async saveGeneratedText(input: SaveGeneratedTextInput): Promise<Creative> {
+    const request = SaveGeneratedTextInputSchema.parse(input);
+    const raw = await this.post<Json>("/creatives/text", {
+      tool: request.tool,
+      text: request.text,
+      originalText: request.originalText ?? undefined,
+      brief: request.brief,
+      title: request.title,
+      campaignId: request.campaignId ?? undefined,
+      creativeId: request.creativeId ?? undefined,
+    });
+    return this.parse(CreativeSchema, mapCreative(raw), "/creatives/text");
+  }
+
+  async updateCreativeText(input: UpdateCreativeTextInput): Promise<Creative> {
+    const request = UpdateCreativeTextInputSchema.parse(input);
+    const raw = await this.patch<Json>(
+      `/creatives/${encodeURIComponent(request.creativeId)}/text`,
+      { text: request.text },
+    );
+    return this.parse(
+      CreativeSchema,
+      mapCreative(raw),
+      `/creatives/${request.creativeId}/text`,
+    );
   }
 
   /* ---------------------------------------------------------------- personas */

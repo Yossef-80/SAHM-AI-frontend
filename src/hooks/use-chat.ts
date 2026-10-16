@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -8,7 +8,13 @@ import { sortMessagesChronologically } from "@/lib/api/adapters";
 import { qk } from "@/lib/query-keys";
 import { useAssistantStore } from "@/store/assistant-store";
 import type { Message, SendMessageInput } from "@/types";
-import { useConversation } from "./use-api";
+
+/** Shape of one conversation page held in the react-query cache. */
+type ConversationPage = {
+  conversation: { id: string } & Record<string, unknown>;
+  messages: Message[];
+};
+import { CONVERSATION_PAGE_SIZE, useConversation } from "./use-api";
 
 /**
  * Chat state for one conversation: cached messages + the in-flight exchange.
@@ -129,14 +135,57 @@ export function useChat(conversationId: string | null) {
     if (stream?.status === "error") void send(stream.input);
   }, [send, stream]);
 
+  // History is paged newest-first now, so a long thread needs a way back.
+  // The cursor is the oldest message currently held; the fetched page is
+  // prepended to the same cache entry the view already renders.
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  const loadOlder = useCallback(async () => {
+    if (!conversationId || loadingOlderRef.current) return;
+    const current = qc.getQueryData<ConversationPage>(qk.conversation(conversationId));
+    const oldest = current?.messages?.[0];
+    if (!oldest) return;
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    try {
+      const page = await api.getConversation(conversationId, {
+        before: oldest.id,
+        limit: CONVERSATION_PAGE_SIZE,
+      });
+      qc.setQueryData(qk.conversation(conversationId), {
+        conversation: current?.conversation ?? page.conversation,
+        messages: [...page.messages, ...(current?.messages ?? [])],
+      });
+    } catch {
+      // A failed page load must not lose what is already on screen.
+    } finally {
+      loadingOlderRef.current = false;
+      setIsLoadingOlder(false);
+    }
+  }, [conversationId, qc]);
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
+  }, []);
+
+  // Leaving the chat (or switching conversation) used to leave the SSE request
+  // open: the browser kept the connection, the store kept receiving snapshots
+  // for a view that no longer exists, and the query cache kept being
+  // invalidated. Aborting on unmount closes both halves of that.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
   }, []);
 
   return {
     query,
     messages,
     send,
+    loadOlder,
+    hasOlder: (query.data?.messages?.length ?? 0) >= CONVERSATION_PAGE_SIZE,
+    isLoadingOlder,
     retry,
     stop,
     progress: streamBelongsHere ? stream?.progress ?? [] : [],

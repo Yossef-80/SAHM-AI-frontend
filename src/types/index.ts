@@ -569,6 +569,9 @@ export const ActionTypeSchema = z.enum([
   "GENERATE_MARKETING_STRATEGY",
   "GENERATE_CONTENT_CALENDAR",
   "GENERATE_TEXT",
+  // Creative learning loop: approved/edited Layla copy becomes brand-voice memory
+  "SAVE_GENERATED_TEXT",
+  "UPDATE_CREATIVE_TEXT",
   "UPDATE_AGENT",
   "UPDATE_BRAND_PROFILE",
   "VIEW_USAGE",
@@ -877,6 +880,26 @@ export const ContextUsedBlockSchema = z.object({
   truncated: z.boolean().default(false),
 });
 
+/**
+ * A generated image the backend wants shown as a picture, not as a link.
+ *
+ * The backend has emitted this block since the image tools existed, but the
+ * frontend had no schema for it: the discriminated union rejected the payload,
+ * `BlockRenderer` degraded it to the dashed "unsupported content" box, and the
+ * user was left reading a raw asset URL in the assistant's text. Everything is
+ * optional except the type so an older or newer server cannot crash the view.
+ */
+export const ImagePreviewBlockSchema = z.object({
+  type: z.literal("image_preview"),
+  title: z.string().default(""),
+  url: z.string(),
+  alt: z.string().default(""),
+  prompt: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+});
+export type ImagePreviewBlock = z.infer<typeof ImagePreviewBlockSchema>;
+
 export const MessageBlockSchema = z.discriminatedUnion("type", [
   TextBlockSchema,
   FindingsBlockSchema,
@@ -887,6 +910,7 @@ export const MessageBlockSchema = z.discriminatedUnion("type", [
   ContextUsedBlockSchema,
   QuestionWithOptionsBlockSchema,
   ErrorBlockSchema,
+  ImagePreviewBlockSchema,
 ]);
 export type MessageBlock = z.infer<typeof MessageBlockSchema>;
 export type MessageBlockType = MessageBlock["type"];
@@ -1187,6 +1211,28 @@ export const GeneratedTextSchema = z.object({
   createdAt: IsoDateSchema,
 });
 export type GeneratedText = z.infer<typeof GeneratedTextSchema>;
+
+/**
+ * Saving generated copy. `originalText` is what Layla produced, `text` is what
+ * the user is keeping: when they differ the backend stores the before/after pair
+ * as brand-voice memory, which is how Layla learns this workspace's taste.
+ */
+export const SaveGeneratedTextInputSchema = z.object({
+  tool: TextToolSchema,
+  text: z.string().min(1),
+  originalText: z.string().nullable().default(null),
+  brief: z.string().default(""),
+  title: z.string().default(""),
+  campaignId: IdSchema.nullable().default(null),
+  creativeId: IdSchema.nullable().default(null),
+});
+export type SaveGeneratedTextInput = z.infer<typeof SaveGeneratedTextInputSchema>;
+
+export const UpdateCreativeTextInputSchema = z.object({
+  creativeId: IdSchema,
+  text: z.string().min(1),
+});
+export type UpdateCreativeTextInput = z.infer<typeof UpdateCreativeTextInputSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Agents & personas                                                   */

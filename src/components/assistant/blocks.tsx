@@ -23,6 +23,7 @@ import {
   type ContextUsedBlock,
   type ErrorBlock,
   type FindingsBlock,
+  type ImagePreviewBlock,
   type MessageBlock,
   type MetricBlock,
   type QuestionWithOptionsBlock,
@@ -86,6 +87,8 @@ function KnownBlock({
       return <QuestionBlockView block={block} ctx={ctx} {...questionProps} />;
     case "error":
       return <ErrorBlockView block={block} ctx={ctx} />;
+    case "image_preview":
+      return <ImagePreviewBlockView block={block} />;
     default: {
       const _never: never = block;
       return <UnknownBlockView block={_never as AnyBlock} />;
@@ -189,6 +192,65 @@ function cleanSerializedText(text: string): string {
   return text;
 }
 
+/**
+ * A fenced code block (` ```json … ``` `).
+ *
+ * Why this exists: when Layla answers in a plain chat she hands the finished
+ * deliverable over **inside the message** — a JSON document in a fence — and
+ * `renderMarkdown` had no fence branch at all. The opening ` ```json ` was
+ * printed as body text, every JSON line became its own paragraph, and the
+ * closing fence rendered as a single inline backtick. On top of that the bubble
+ * is RTL (Arabic), so the bidi algorithm re-ordered the braces and parentheses
+ * of the JSON and made it unreadable.
+ *
+ * Three deliberate choices here:
+ *   1. `dir="ltr"` on the block — code is LTR no matter what the UI language is.
+ *   2. `json` fences are re-indented with `JSON.parse` (falling back to the raw
+ *      text when the model emitted something that is not valid JSON, which
+ *      happens while a stream is still incomplete).
+ *   3. A copy button — the whole point of that block is to be pasted somewhere
+ *      else, usually an image model.
+ */
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const t = useTranslations("assistant");
+  const [copied, setCopied] = useState(false);
+  const display = (() => {
+    if (lang !== "json") return code;
+    try {
+      return JSON.stringify(JSON.parse(code), null, 2);
+    } catch {
+      return code;
+    }
+  })();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(display);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked (insecure context / denied): the text stays selectable */
+    }
+  };
+  return (
+    <div dir="ltr" className="my-2 overflow-hidden rounded-md border border-border bg-muted/40">
+      <div className="flex items-center justify-between border-b border-border bg-muted/60 px-2 py-1">
+        <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{lang || "code"}</span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {copied && <Check className="h-3 w-3" />}
+          {copied ? t("copied") : t("copyCode")}
+        </button>
+      </div>
+      <pre className="max-w-full overflow-x-auto p-3">
+        <code className="whitespace-pre font-mono text-xs leading-relaxed">{display}</code>
+      </pre>
+    </div>
+  );
+}
+
 export function renderMarkdown(text: string): ReactNode[] {
   const cleaned = cleanSerializedText(text);
   const normalized = cleaned
@@ -202,6 +264,20 @@ export function renderMarkdown(text: string): ReactNode[] {
   while (i < lines.length) {
     const line = lines[i].trim();
     if (!line) { i++; continue; }
+
+    // Fenced code block: the opening fence, its body and the closing fence are
+    // consumed as one unit. `lines` is used untrimmed for the body so the
+    // indentation of the code survives.
+    if (line.startsWith("```")) {
+      const lang = line.replace(/^`{3,}/, "").trim().toLowerCase();
+      i += 1;
+      const body: string[] = [];
+      while (i < lines.length && !lines[i].trim().startsWith("```")) body.push(lines[i++]);
+      if (i < lines.length) i += 1; // closing fence
+      nodes.push(<CodeBlock key={`code-${i}`} lang={lang} code={body.join("\n")} />);
+      continue;
+    }
+
     if (/^(---+|___+|\*\*\*+)$/.test(line)) {
       nodes.push(<hr key={`hr-${i}`} className="my-3 border-border" />);
       i++;
@@ -651,6 +727,7 @@ const RESULT_ARRAY_LABELS: Record<string, string> = {
   pricing_observations: "Price observations",
   prompts: "Prompts",
   recommendations: "Recommendations",
+  review_notes: "Review notes",
   risks: "Risks",
   scenes: "Scenes",
   segments: "Audience segments",
@@ -893,6 +970,76 @@ export function ErrorBlockView({ block, ctx }: { block: ErrorBlock; ctx: BlockCo
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* image_preview — the generated picture itself, plus its provenance   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Shows a generated creative as an image.
+ *
+ * It is a plain `<img>` on purpose. `next/image` would route the request through
+ * the Next server's optimizer, which only accepts hosts listed in
+ * `remotePatterns`; the whole point of this block is that the picture appears
+ * where the user already is, without them clicking a link. When the asset fails
+ * to load the block says so, so a broken image is diagnosable instead of an
+ * empty space.
+ */
+export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
+  const t = useTranslations("assistant");
+  const [broken, setBroken] = useState(false);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Sparkles className="h-4 w-4" aria-hidden />
+          {block.title || t("imagePreview.fallbackTitle")}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {broken ? (
+          <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            {t("imagePreview.loadFailed")}
+          </p>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element -- see the note above
+          <img
+            src={block.url}
+            alt={block.alt || block.prompt || t("imagePreview.fallbackAlt")}
+            loading="lazy"
+            className="max-h-[28rem] w-full rounded-md border bg-muted/30 object-contain"
+            onError={() => setBroken(true)}
+          />
+        )}
+        {block.prompt && (
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none">
+              {t("imagePreview.showPrompt")}
+            </summary>
+            <p className="mt-1 whitespace-pre-wrap leading-relaxed">{block.prompt}</p>
+          </details>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={block.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+          >
+            <ExternalLink className="h-3 w-3" aria-hidden />
+            {t("imagePreview.openFull")}
+          </a>
+          {(block.provider || block.model) && (
+            <span className="text-[11px] text-muted-foreground/80">
+              {[block.provider, block.model].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

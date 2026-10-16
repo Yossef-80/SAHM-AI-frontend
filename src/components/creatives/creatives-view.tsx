@@ -13,10 +13,11 @@ import { useAction } from "@/hooks/use-action";
 import { useCampaigns, useCreatives, useImageGenerationReady } from "@/hooks/use-api";
 import { useUiStore } from "@/store/ui-store";
 import { useAssistantStore } from "@/store/assistant-store";
-import { CreativeKindSchema, TextToolSchema, type CreativeKind, type TextTool } from "@/types";
+import { CreativeKindSchema, TextToolSchema, type Creative, type CreativeKind, type TextTool } from "@/types";
 import { CreativeCard } from "./creative-card";
 import { CreateCreativeDialog } from "./create-creative-dialog";
 import { AnalyzeReferenceDialog } from "./analyze-reference-dialog";
+import { EditCopyDialog } from "./edit-copy-dialog";
 import { GenerateTextDialog } from "./generate-text-dialog";
 import { ReferenceLibrary } from "./reference-library";
 
@@ -32,6 +33,7 @@ export function CreativesView() {
   const locale = useLocale();
   const setPendingPrompt = useAssistantStore((state) => state.setPendingPrompt);
   const [kind, setKind] = useState<CreativeKind | "all">("all");
+  const [editingCopy, setEditingCopy] = useState<Creative | null>(null);
   const [campaignId, setCampaignId] = useState<string>("all");
   const [refOpen, setRefOpen] = useState(false);
   const [textTool, setTextTool] = useState<TextTool | null>(null);
@@ -248,12 +250,19 @@ export function CreativesView() {
                   setTextCampaignId(creative.campaignId);
                   setTextTool("generate_ad_variations");
                 }}
+                onEditCopy={setEditingCopy}
               />
             ))}
           </div>
         )}
       </AsyncBoundary>
 
+      <EditCopyDialog
+        creative={editingCopy}
+        onOpenChange={(open) => {
+          if (!open) setEditingCopy(null);
+        }}
+      />
       <CreateCreativeDialog />
       <AnalyzeReferenceDialog
         open={refOpen}

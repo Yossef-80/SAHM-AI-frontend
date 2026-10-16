@@ -10,6 +10,8 @@ import {
   CreativeKindSchema,
   GenerateContentCalendarInputSchema,
   GenerateTextInputSchema,
+  SaveGeneratedTextInputSchema,
+  UpdateCreativeTextInputSchema,
   IdSchema,
   UpdateAgentInputSchema,
 } from "@/types";
@@ -495,6 +497,38 @@ export const actionRegistry = {
       const result = await ctx.api.generateText(payload);
       ctx.ui.setGeneratedText(result);
       return { ok: true, data: result };
+    },
+  }),
+
+  SAVE_GENERATED_TEXT: define({
+    type: "SAVE_GENERATED_TEXT",
+    labelKey: "SAVE_GENERATED_TEXT",
+    icon: "BookmarkPlus",
+    payloadSchema: SaveGeneratedTextInputSchema,
+    requiresConfirmation: false,
+    /**
+     * Persist approved copy. The backend stores it as a brand-voice example --
+     * and when `originalText` differs from `text`, stores the before/after pair
+     * instead, which is the stronger signal of the two.
+     */
+    async handler(payload, ctx) {
+      const creative = await ctx.api.saveGeneratedText(payload);
+      await invalidate(ctx.queryClient, [["creatives"]]);
+      return { ok: true, toastKey: "toast.textSaved", data: creative };
+    },
+  }),
+
+  UPDATE_CREATIVE_TEXT: define({
+    type: "UPDATE_CREATIVE_TEXT",
+    labelKey: "UPDATE_CREATIVE_TEXT",
+    icon: "PencilLine",
+    payloadSchema: UpdateCreativeTextInputSchema,
+    requiresConfirmation: false,
+    /** An edit is the user telling Layla what they actually wanted. */
+    async handler(payload, ctx) {
+      const creative = await ctx.api.updateCreativeText(payload);
+      await invalidate(ctx.queryClient, [["creatives"]]);
+      return { ok: true, toastKey: "toast.textUpdated", data: creative };
     },
   }),
 

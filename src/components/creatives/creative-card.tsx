@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Check, FileText, MoreHorizontal, Play } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +19,11 @@ interface Props {
   onSelect?: () => void;
   showActions?: boolean;
   onGenerateVariations?: (creative: Creative) => void;
+  /** Only meaningful for `copy` creatives: edits teach Layla the brand voice. */
+  onEditCopy?: (creative: Creative) => void;
 }
 
-export function CreativeCard({ creative: c, selectable, selected, onSelect, showActions = false, onGenerateVariations }: Props) {
+export function CreativeCard({ creative: c, selectable, selected, onSelect, showActions = false, onGenerateVariations, onEditCopy }: Props) {
   const t = useTranslations("creatives");
   const tk = useTranslations("kind");
   const ta = useTranslations("actions");
@@ -36,8 +39,19 @@ export function CreativeCard({ creative: c, selectable, selected, onSelect, show
     ) : (
       <div className="relative h-full w-full bg-muted">
         {c.thumbnailUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={c.thumbnailUrl} alt={c.title} className="h-full w-full object-cover" loading="lazy" />
+          <Image
+            src={c.thumbnailUrl}
+            alt={c.title}
+            fill
+            sizes="(max-width: 768px) 50vw, 25vw"
+            // Creative images come from Supabase Storage, Meta CDNs and user
+            // uploads; `unoptimized` serves them directly instead of routing
+            // every one through the Next image proxy (and avoids a
+            // remotePatterns entry per host). Lazy loading and layout
+            // reservation still apply.
+            unoptimized
+            className="object-cover"
+          />
         )}
         {c.kind === "video" && (
           <span className="absolute inset-0 flex items-center justify-center">
@@ -85,6 +99,9 @@ export function CreativeCard({ creative: c, selectable, selected, onSelect, show
                 >
                   {ta("GENERATE_VARIATIONS")}
                 </DropdownMenuItem>
+                {c.kind === "copy" && onEditCopy && (
+                  <DropdownMenuItem onClick={() => onEditCopy(c)}>{ta("UPDATE_CREATIVE_TEXT")}</DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => dispatch({ type: "ANALYZE_CREATIVE", payload: { creativeId: c.id } })}>{ta("ANALYZE_CREATIVE")}</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => dispatch({ type: "ADD_TO_CAMPAIGN", payload: { creativeId: c.id } })}>{ta("ADD_TO_CAMPAIGN")}</DropdownMenuItem>
               </DropdownMenuContent>

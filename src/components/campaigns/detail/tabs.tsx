@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -316,7 +317,14 @@ export function PerformanceTab({ campaign: c }: { campaign: Campaign }) {
                       <TableRow key={`${ad.metaAdId}:${ad.dateStart}:${ad.dateEnd}`}>
                         <TableCell>
                           {ad.mapped && ad.imageUrl ? (
-                            <img src={ad.imageUrl} alt={ad.metaAdName || t("creative")} className="h-16 w-16 rounded object-cover" loading="lazy" />
+                            <Image
+                              src={ad.imageUrl}
+                              alt={ad.metaAdName || t("creative")}
+                              width={64}
+                              height={64}
+                              unoptimized
+                              className="h-16 w-16 rounded object-cover"
+                            />
                           ) : (
                             <Badge variant="outline">{t("unmapped")}</Badge>
                           )}

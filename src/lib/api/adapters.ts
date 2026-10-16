@@ -357,18 +357,44 @@ export function toCampaignCreateBody(draft: Json): Json {
 /* Creatives                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/** The statuses the domain type accepts; the backend also says "ok". */
+const CREATIVE_STATUSES = ["draft", "generating", "ready", "approved", "rejected"] as const;
+
 export function mapCreative(raw: Json): Creative {
   const url = str(raw.url) || str(raw.assetUrl) || str(raw.thumbnailUrl);
   const created = iso(raw.createdAt);
+
+  // The backend stores what it was asked to make. Assuming "image" here made
+  // saved ad copy render as an empty image card, hid it from the copy filter,
+  // and removed the "edit copy" entry point that feeds the learning loop.
+  const rawKind = str(raw.kind);
+  const kind: Creative["kind"] = rawKind === "copy" || rawKind === "video" ? rawKind : "image";
+  const isCopy = kind === "copy";
+
+  // For copy, the row's `prompt` column *is* the deliverable (no title is
+  // prefixed). The first line reads as the headline and the rest as the body, so
+  // a two-line ad does not end up truncated inside a one-line title.
+  const prompt = str(raw.prompt);
+  const lines = prompt.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const headline = isCopy ? lines[0] ?? "" : "";
+  const primaryText = isCopy ? lines.slice(1).join("\n\n") : "";
+
   return {
     id: str(raw.id),
     campaignId: nullableStr(raw.campaignId),
-    kind: "image",
-    title: str(raw.prompt, "Creative").slice(0, 80),
-    status: str(raw.status, "ready") === "ready" ? "ready" : "draft",
-    prompt: str(raw.prompt) || undefined,
-    assetUrl: url || undefined,
-    thumbnailUrl: url || undefined,
+    kind,
+    title: (isCopy ? headline : prompt).slice(0, 80) || "Creative",
+    // "ok" is the backend's success value for generated and uploaded assets; it
+    // is not one of this type's statuses, so it has to be translated rather than
+    // filtered out (every finished image was showing as a draft).
+    status: str(raw.status, "ready") === "ok" ? "ready" : mapCreativeStatus(str(raw.status)),
+    prompt: prompt || undefined,
+    // A copy creative has no rendered asset: pointing a thumbnail at an empty
+    // URL is what produced a broken image box instead of the text.
+    assetUrl: isCopy ? undefined : url || undefined,
+    thumbnailUrl: isCopy ? undefined : url || undefined,
+    headline: isCopy && headline ? headline : undefined,
+    primaryText: isCopy && primaryText ? primaryText : undefined,
     // Tool outputs are plain BaseModels with no alias generator, so this field
     // arrives snake_case from the backend; camelCase is kept for the mocks.
     aspectRatio: mapAspectRatio(raw.aspectRatio ?? raw.aspect_ratio),
@@ -376,6 +402,12 @@ export function mapCreative(raw: Json): Creative {
     createdAt: created,
     updatedAt: iso(raw.updatedAt ?? created),
   };
+}
+
+function mapCreativeStatus(value: string): Creative["status"] {
+  return (CREATIVE_STATUSES as readonly string[]).includes(value)
+    ? (value as Creative["status"])
+    : "draft";
 }
 
 /** `StyleSpec` arrives camelCase already, but be defensive about nulls. */

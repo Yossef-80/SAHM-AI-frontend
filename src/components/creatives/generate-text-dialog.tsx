@@ -41,6 +41,10 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
   const [brief, setBrief] = useState(initialBrief);
   const [copied, setCopied] = useState(false);
   const [useSavedStyle, setUseSavedStyle] = useState(false);
+  // Editable copy. Whatever the user keeps is what gets saved -- and when it
+  // differs from what Layla produced, the backend stores the before/after pair
+  // as brand-voice memory instead of a plain approval.
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -49,6 +53,7 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
       setUseSavedStyle(false);
       setResult(null);
       setCopied(false);
+      setDraft("");
     }
   }, [open, initialTool, initialBrief, setResult]);
 
@@ -61,6 +66,12 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
     const requestBrief = [brief.trim(), styleNote].filter(Boolean).join("\n\n");
     return dispatch({ type: "GENERATE_TEXT", payload: { tool, brief: requestBrief, campaignId, creativeId, language: locale } });
   };
+
+  // The generated result is only known after the action resolves, so the editable
+  // draft follows it rather than being seeded from the request.
+  useEffect(() => {
+    setDraft(result?.plainText ?? "");
+  }, [result]);
 
   const copy = async () => {
     if (!result) return;
@@ -140,6 +151,18 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
                   <p className="whitespace-pre-wrap text-sm">{s.body}</p>
                 </div>
               ))}
+              <div className="space-y-1.5 border-t pt-3">
+                <Label htmlFor="gt-edit">{t("editBeforeSaving")}</Label>
+                <Textarea
+                  id="gt-edit"
+                  rows={5}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  dir="auto"
+                  className="bg-background text-sm"
+                />
+                <p className="text-xs text-muted-foreground">{t("editHint")}</p>
+              </div>
             </div>
           )}
         </div>
@@ -152,6 +175,27 @@ export function GenerateTextDialog({ open, onOpenChange, initialTool = "generate
               action={{ type: "CREATE_CREATIVE", payload: { kind: "image", brief: result.plainText.slice(0, 1500), campaignId } }}
             >
               {t("useAsBrief")}
+            </ActionButton>
+          )}
+          {result && (
+            <ActionButton
+              variant="outline"
+              action={{
+                type: "SAVE_GENERATED_TEXT",
+                payload: {
+                  tool,
+                  text: draft.trim() || result.plainText,
+                  // Layla's original wording: unequal to `text` means the user
+                  // rewrote it, which is the signal worth storing.
+                  originalText: result.plainText,
+                  brief,
+                  title: result.title,
+                  campaignId,
+                  creativeId,
+                },
+              }}
+            >
+              {t("saveToLibrary")}
             </ActionButton>
           )}
           <Button disabled={!valid || isPending} onClick={generate}>

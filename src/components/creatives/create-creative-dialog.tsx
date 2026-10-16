@@ -33,7 +33,6 @@ export function CreateCreativeDialog() {
   const [brief, setBrief] = useState("");
   const [campaignId, setCampaignId] = useState<string>("none");
   const [ratio, setRatio] = useState<(typeof RATIOS)[number]>("1:1");
-  const [count, setCount] = useState("1");
   const [useSavedStyle, setUseSavedStyle] = useState(false);
   // An analyzed reference switches generation from /images/generations to
   // /images/edits, i.e. the output is edited *from* the reference instead of
@@ -46,7 +45,6 @@ export function CreateCreativeDialog() {
       setBrief(req.brief ?? "");
       setCampaignId(req.campaignId ?? "none");
       setRatio(req.kind === "video" ? "9:16" : "1:1");
-      setCount("1");
       setUseSavedStyle(false);
       setReferenceId(req.referenceAnalysisId ?? "none");
     }
@@ -143,21 +141,6 @@ export function CreateCreativeDialog() {
                 </p>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label>{t("count")}</Label>
-              <Select value={count} onValueChange={setCount}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {["1", "2", "3", "4"].map((n) => (
-                    <SelectItem key={n} value={n}>
-                      {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </div>
         <DialogFooter>
@@ -181,7 +164,10 @@ export function CreateCreativeDialog() {
                   referenceAnalysisId:
                     referenceId === "none" ? undefined : referenceId,
                   aspectRatio: req.kind === "copy" ? undefined : ratio,
-                  count: Number(count),
+                  // One image per render: the picker that used to offer 1-4 was
+                  // removed with it, because the backend renders a single asset
+                  // and offering more only created the illusion of a choice.
+                  count: 1,
                 },
               });
               if (res?.ok) setReq(null);

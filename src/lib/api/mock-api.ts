@@ -87,6 +87,8 @@ import {
   UpdateCampaignInputSchema,
   GenerateContentCalendarInputSchema,
   GenerateTextInputSchema,
+  SaveGeneratedTextInputSchema,
+  UpdateCreativeTextInputSchema,
   ListContentInputSchema,
   UpdateAgentInputSchema,
   UpdateContentItemInputSchema,
@@ -199,6 +201,8 @@ const TASK_STEPS: Record<ActionType, string[]> = {
   CREATE_CAMPAIGN: ["Analyze business", "Draft strategy", "Build audience", "Prepare creatives"],
   CREATE_CREATIVE: ["Read brand profile", "Draft concepts", "Render asset", "Score creative"],
   GENERATE_VARIATIONS: ["Analyze source creative", "Generate variants", "Score variants"],
+  SAVE_GENERATED_TEXT: ["Validate copy", "Store creative", "Learn brand voice"],
+  UPDATE_CREATIVE_TEXT: ["Diff the edit", "Update creative", "Learn brand voice"],
   ANALYZE_CAMPAIGN: ["Pull Meta metrics", "Compare to benchmarks", "Identify root causes", "Write findings"],
   ANALYZE_CREATIVE: ["Extract visual features", "Compare to winners", "Write critique"],
   RESEARCH_COMPETITORS: ["Query Ad Library", "Cluster offers", "Summarize positioning"],
@@ -1371,7 +1375,10 @@ export class MockApi implements MarketingApi {
     await simulate();
     return clone(state.conversations);
   }
-  async getConversation(id: string) {
+  // The second parameter only exists to satisfy the `MarketingApi` contract:
+  // real paging needs a server, and the mock holds the whole thread in memory.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getConversation(id: string, options?: { limit?: number; before?: string }) {
     await simulate();
     const conversation = findOr404(state.conversations, id, "Conversation");
     return { conversation: clone(conversation), messages: clone(state.messages[id] ?? []) };
@@ -1666,6 +1673,53 @@ export class MockApi implements MarketingApi {
       createdAt: now(),
     };
     return out;
+  }
+
+  /**
+   * Demo parity for the learning loop. The real backend stores approved or
+   * edited copy as brand-voice memory; demo mode has no memory store, so it
+   * returns the creative the UI can render.
+   */
+  async saveGeneratedText(raw: unknown) {
+    const input = SaveGeneratedTextInputSchema.parse(raw);
+    await sleep(350);
+    await simulate({ safe: true });
+    const now = new Date().toISOString();
+    const creative: Creative = {
+      id: uid("cr"),
+      campaignId: input.campaignId ?? null,
+      kind: "copy",
+      title: (input.title || input.text.split("\n")[0] || "Copy").slice(0, 60),
+      status: "ready",
+      prompt: input.text,
+      headline: input.text.split("\n")[0]?.slice(0, 80),
+      primaryText: input.text,
+      tags: ["layla-text"],
+      createdAt: now,
+      updatedAt: now,
+    };
+    return creative;
+  }
+
+  async updateCreativeText(raw: unknown) {
+    const input = UpdateCreativeTextInputSchema.parse(raw);
+    await sleep(300);
+    await simulate({ safe: true });
+    const now = new Date().toISOString();
+    const creative: Creative = {
+      id: input.creativeId,
+      campaignId: null,
+      kind: "copy",
+      title: input.text.split("\n")[0]?.slice(0, 60) || "Copy",
+      status: "ready",
+      prompt: input.text,
+      headline: input.text.split("\n")[0]?.slice(0, 80),
+      primaryText: input.text,
+      tags: ["layla-text", "edited"],
+      createdAt: now,
+      updatedAt: now,
+    };
+    return creative;
   }
 
   /* Agents */

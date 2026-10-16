@@ -12,6 +12,8 @@ import type {
   ContentItem,
   GenerateContentCalendarInput,
   GenerateTextInput,
+  SaveGeneratedTextInput,
+  UpdateCreativeTextInput,
   GeneratedText,
   ListContentInput,
   ListMemoryItemsInput,
@@ -178,7 +180,10 @@ export interface MarketingApi {
 
   /* Assistant */
   listConversations(): Promise<Conversation[]>;
-  getConversation(id: string): Promise<{ conversation: Conversation; messages: Message[] }>;
+  getConversation(
+    id: string,
+    options?: { limit?: number; before?: string },
+  ): Promise<{ conversation: Conversation; messages: Message[] }>;
   sendMessage(input: SendMessageInput): Promise<SendMessageOutput>;
   /**
    * Streaming-ready: yields progressively updated assistant messages.
@@ -210,6 +215,10 @@ export interface MarketingApi {
 
   /* Text generation tools */
   generateText(input: GenerateTextInput): Promise<GeneratedText>;
+  /** Persist approved/edited Layla copy as a creative (teaches Layla the voice). */
+  saveGeneratedText(input: SaveGeneratedTextInput): Promise<Creative>;
+  /** Edit a saved text creative; the diff becomes brand-voice memory. */
+  updateCreativeText(input: UpdateCreativeTextInput): Promise<Creative>;
 
   /* Agents */
   listAgents(): Promise<Agent[]>;

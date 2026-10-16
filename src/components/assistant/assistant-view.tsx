@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { History, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,8 @@ const SUGGESTIONS = ["cpa", "competitors", "creative", "campaign"] as const;
 export function AssistantView({ conversationId }: { conversationId: string | null }) {
   const t = useTranslations("assistant");
   const locale = useLocale() as "en" | "ar";
-  const { query, messages, send, retry, stop, progress, isStreaming } = useChat(conversationId);
+  const { query, messages, send, retry, stop, progress, isStreaming, loadOlder, hasOlder, isLoadingOlder } =
+    useChat(conversationId);
   const context = useAssistantStore((s) => s.context);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
   const setPendingPrompt = useAssistantStore((s) => s.setPendingPrompt);
@@ -30,6 +31,8 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
   const agents = useAgents();
   const [historyOpen, setHistoryOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
   // Auto-send a prompt queued from another page (Home hero, Agents → Chat,
   // Creatives → Write with AI).
@@ -55,8 +58,22 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
     }
   }, [pendingPrompt, conversationId, isStreaming, send, setPendingPrompt, setPersonaId, locale]);
 
+  // Only follow the stream when the reader is already at the bottom, and only
+  // once per frame. Unconditionally scrolling on every messages change fired on
+  // each streamed chunk and yanked the view away from anyone reading back
+  // through the history.
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
+    if (!stickToBottomRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [messages]);
 
   const savedContext = query.data?.conversation.context;
@@ -69,10 +86,19 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
   const [creativeModeChoice, setCreativeMode] = useState<CreativeMode | null>(null);
   const creativeMode: CreativeMode =
     creativeModeChoice ?? savedContext?.creativeMode ?? "chat";
+  // The guided prompt interview belongs to `prompt` mode. Sending it with another
+  // mode pinned every later turn to prompt-only on the server: the assistant kept
+  // replying "the approved prompt is still in the previous message" and refused to
+  // generate even after the user switched the composer to «تصميم» and asked for
+  // the image. An explicit picker choice wins over the conversation's saved
+  // workflow, exactly like the persona picker above; leaving the picker untouched
+  // keeps the interview running.
+  const promptInterviewActive =
+    creativeModeChoice === null ? savedContext?.workflow === "creative_prompt" : creativeModeChoice === "prompt";
   const workflowFields = {
     personaId: effectivePersonaId ?? undefined,
-    workflow: savedContext?.workflow ?? undefined,
-    promptType: savedContext?.promptType ?? undefined,
+    workflow: promptInterviewActive ? savedContext?.workflow ?? undefined : undefined,
+    promptType: promptInterviewActive ? savedContext?.promptType ?? undefined : undefined,
     referenceAnalysisId: savedContext?.referenceAnalysisId ?? undefined,
     // An explicit picker choice wins, same rule as the persona picker above.
     creativeMode,
@@ -84,6 +110,14 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
 
   const list = (
     <div className="flex flex-col gap-6">
+      {hasOlder && (
+        <div className="flex justify-center">
+          <Button variant="ghost" size="sm" onClick={() => void loadOlder()} disabled={isLoadingOlder}>
+            {isLoadingOlder ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
+            {isLoadingOlder ? t("loadingOlder") : t("loadOlder")}
+          </Button>
+        </div>
+      )}
       {messages.map((m) => (
         <MessageBubble key={m.id} message={m} ctx={{ conversationId: conversationId ?? "new", onAnswer, onRetry: retry, isStreaming }} />
       ))}
@@ -169,7 +203,7 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
             </Sheet>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto flex min-h-full max-w-3xl flex-col">
             {conversationId ? (
               <AsyncBoundary

@@ -228,7 +228,9 @@
       "failed": "Action failed: {message}",
       "cancelled": "Cancelled — nothing was changed",
       "calendarGenerated": "{count, plural, one {# content item planned} other {# content items planned}}",
-      "agentUpdated": "{name} updated"
+      "agentUpdated": "{name} updated",
+      "textSaved": "Copy saved. Layla will follow this voice next time.",
+      "textUpdated": "Copy updated. The change is now an example for Layla."
     },
     "launchTitle": "Launch \"{name}\"",
     "ANALYZE_WEBSITE": "Analyze website",
@@ -246,7 +248,9 @@
     "creativePromptVideoStart": "Layla, help me prepare a strong video-generation prompt. Start with one grouped checklist of missing details, including duration, shot progression, camera/motion, transitions, audio, dialogue, on-screen text, and ending when relevant. If I attach a reference, analyze what is visible, then show a preserve/change plan and wait for my approval before writing the final prompt. Do not generate media.",
     "creativePromptBriefLabel": "My starting brief",
     "creativePromptReferenceLabel": "Selected reference",
-    "imageProviderMissing": "The image generator is not configured. Ask the workspace owner to set the image provider and its key in Settings → Admin → Connectors → Image generation. The system never returns placeholder images."
+    "imageProviderMissing": "The image generator is not configured. Ask the workspace owner to set the image provider and its key in Settings → Admin → Connectors → Image generation. The system never returns placeholder images.",
+    "SAVE_GENERATED_TEXT": "Save to library",
+    "UPDATE_CREATIVE_TEXT": "Save copy"
   },
   "home": {
     "heroTitle": "What should we work on today?",
@@ -270,6 +274,8 @@
     "title": "Assistant",
     "newChat": "New chat",
     "history": "History",
+    "copyCode": "Copy",
+    "copied": "Copied",
     "noConversations": "No conversations yet",
     "startOne": "Start a conversation",
     "placeholder": "Ask the assistant…",
@@ -340,7 +346,16 @@
     "attachmentUploadFailed": "The photo could not be uploaded. Nothing was attached.",
     "mentionTitle": "References, competitors and tools (@ Mention)",
     "mentionCompetitorDesc": "A competitor saved in memory",
-    "mentionReferenceDesc": "An analyzed reference saved in the library"
+    "mentionReferenceDesc": "An analyzed reference saved in the library",
+    "loadOlder": "Load earlier messages",
+    "loadingOlder": "Loading…",
+    "imagePreview": {
+      "fallbackTitle": "Generated image",
+      "fallbackAlt": "Generated image",
+      "loadFailed": "The image could not be loaded (it may have been deleted, or the URL is not reachable from this browser).",
+      "showPrompt": "Show the prompt used",
+      "openFull": "Open full size"
+    }
   },
   "blocks": {
     "findings": "Findings",
@@ -806,7 +821,14 @@
       "savedStylePreview": "Style to apply: {style}",
       "preferredStylePrompt": "Preferred visual style to apply: {style}. Follow it for visual direction unless the brief explicitly overrides it.",
       "outputModeNote": "Layla returns briefs, copy, scripts and generation prompts here; this does not render a finished video.",
-      "demoModeNote": "Demo mode is active: this uses illustrative local data, not a live AI request. Set NEXT_PUBLIC_USE_MOCKS=false in the frontend build to use the backend."
+      "demoModeNote": "Demo mode is active: this uses illustrative local data, not a live AI request. Set NEXT_PUBLIC_USE_MOCKS=false in the frontend build to use the backend.",
+      "editBeforeSaving": "Edit before saving",
+      "editHint": "Keep it as it is to approve it, or rewrite it — either way Layla learns your voice from what you save.",
+      "saveToLibrary": "Save to library",
+      "editCopyTitle": "Edit copy",
+      "editCopyLabel": "Copy",
+      "editCopyHint": "Saving an edit teaches Layla this workspace's voice: the previous version and yours are kept as a pair.",
+      "saveCopyEdit": "Save copy"
     },
     "imageProviderMissing": "Image generation is not configured. Ask the workspace owner to set the image provider and key in Settings → Admin → Connectors → Image generation.",
     "imageProviderMissingShort": "Not configured"

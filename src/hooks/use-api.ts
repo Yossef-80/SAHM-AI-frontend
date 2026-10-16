@@ -225,10 +225,21 @@ export const useDismissRecommendation = () => {
 };
 
 /* Assistant */
+
+//: Messages fetched when a conversation is opened. The backend caps a page at
+//: 200; 100 keeps the first paint fast while covering a long working thread.
+export const CONVERSATION_PAGE_SIZE = 100;
+
 export const useConversations = () =>
   useQuery({ queryKey: qk.conversations, queryFn: () => api.listConversations(), staleTime: 60_000 });
 export const useConversation = (id: string | null) =>
-  useQuery({ queryKey: qk.conversation(id ?? ""), queryFn: () => api.getConversation(id!), enabled: !!id, staleTime: 60_000 });
+  useQuery({
+    queryKey: qk.conversation(id ?? ""),
+    // Newest window of the conversation; older turns page in on demand.
+    queryFn: () => api.getConversation(id!, { limit: CONVERSATION_PAGE_SIZE }),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
 
 /* Tasks — polls while running */
 export const useTask = (id: string, enabled = true) =>
