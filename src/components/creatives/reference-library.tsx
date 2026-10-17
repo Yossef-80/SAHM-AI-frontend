@@ -1,11 +1,11 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
-import { ImagePlus, Loader2, Star, Video } from "lucide-react";
+import { ImagePlus, Loader2, Star, Trash2, Video } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useCreativeReferences, useUpdateCreativeReference } from "@/hooks/use-api";
+import { useCreativeReferences, useDeleteCreativeReference, useUpdateCreativeReference } from "@/hooks/use-api";
 
 type ReferenceTarget = { id: string; sourceName: string };
 
@@ -19,6 +19,7 @@ export function ReferenceLibrary({ onStartPrompt }: Props) {
   const locale = useLocale();
   const query = useCreativeReferences();
   const update = useUpdateCreativeReference();
+  const remove = useDeleteCreativeReference();
 
   if (query.isLoading) {
     return (
@@ -59,17 +60,35 @@ export function ReferenceLibrary({ onStartPrompt }: Props) {
                     {reference.summary || t("noSummary")}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={reference.favorite ? t("unfavorite") : t("favorite")}
-                  title={reference.favorite ? t("unfavorite") : t("favorite")}
-                  disabled={update.isPending}
-                  onClick={() => update.mutate({ id: reference.id, favorite: !reference.favorite })}
-                >
-                  <Star className={`h-4 w-4 ${reference.favorite ? "fill-amber-400 text-amber-500" : ""}`} />
-                </Button>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={reference.favorite ? t("unfavorite") : t("favorite")}
+                    title={reference.favorite ? t("unfavorite") : t("favorite")}
+                    disabled={update.isPending}
+                    onClick={() => update.mutate({ id: reference.id, favorite: !reference.favorite })}
+                  >
+                    <Star className={`h-4 w-4 ${reference.favorite ? "fill-amber-400 text-amber-500" : ""}`} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("delete")}
+                    title={t("delete")}
+                    disabled={remove.isPending}
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      if (window.confirm(t("confirmDelete"))) {
+                        remove.mutate(reference.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <div className="flex flex-wrap gap-1">
                 {palette.map((color, index) => (

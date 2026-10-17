@@ -339,9 +339,20 @@
     "uploadingAttachment": "جارٍ رفع الصورة…",
     "attachmentReady": "تم إرفاق الصورة بالرسالة. هتتبعت مع الرسالة اللي هتبعتها الآن.",
     "attachmentUploadFailed": "تعذّر رفع الصورة. لم يتم إرفاق أي حاجة.",
-    "mentionTitle": "المراجع والمنافسين والأدوات (@ Mention)",
+    "mentionTitle": "الإشارات (/)",
+    "mentionTabAll": "الكل",
+    "mentionTabTools": "الأدوات",
+    "mentionTabStyles": "أنماط الصور",
+    "mentionTabResearches": "الأبحاث",
+    "mentionEmpty": "لم يتم العثور على أدوات أو مراجع مطابقة.",
     "mentionCompetitorDesc": "منافس مسجّل في الذاكرة",
     "mentionReferenceDesc": "مرجع محلَّل محفوظ في المكتبة",
+    "imageDraftTitle": "معاينة مسودة الصورة",
+    "openFullImage": "فتح بالحجم الكامل",
+    "downloadImage": "تحميل",
+    "imagePreviewError": "تعذر عرض الصورة مباشرة",
+    "openLinkDirectly": "فتح الصورة مباشرة",
+    "promptLabel": "البرومبت",
     "openCreatives": "افتح الاستوديو"
   },
   "blocks": {
@@ -774,7 +785,9 @@
       "useForVideo": "خطّط برومبت فيديو",
       "loading": "جارٍ تحميل المراجع المحفوظة…",
       "error": "تعذّر تحميل المراجع المحفوظة.",
-      "empty": "لا توجد مراجع محفوظة بعد. حلّل صورة لإضافتها."
+      "empty": "لا توجد مراجع محفوظة بعد. حلّل صورة لإضافتها.",
+      "delete": "حذف المرجع",
+      "confirmDelete": "هل أنت متأكد من حذف هذا المرجع؟"
     },
     "card": {
       "menu": "إجراءات الإبداع",

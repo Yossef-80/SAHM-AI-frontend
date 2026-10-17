@@ -339,9 +339,20 @@
     "uploadingAttachment": "Uploading the photo…",
     "attachmentReady": "Photo attached to this message. It goes with the reply you send now.",
     "attachmentUploadFailed": "The photo could not be uploaded. Nothing was attached.",
-    "mentionTitle": "References, competitors and tools (@ Mention)",
+    "mentionTitle": "Mentions (/)",
+    "mentionTabAll": "All",
+    "mentionTabTools": "Tools",
+    "mentionTabStyles": "Image Styles",
+    "mentionTabResearches": "Researches",
+    "mentionEmpty": "No matching tools or references found.",
     "mentionCompetitorDesc": "A competitor saved in memory",
     "mentionReferenceDesc": "An analyzed reference saved in the library",
+    "imageDraftTitle": "Image Draft Preview",
+    "openFullImage": "Open full size",
+    "downloadImage": "Download",
+    "imagePreviewError": "Image preview cannot be displayed directly",
+    "openLinkDirectly": "Open image directly",
+    "promptLabel": "Prompt",
     "openCreatives": "Open creatives"
   },
   "blocks": {
@@ -774,7 +785,9 @@
       "useForVideo": "Plan video prompt",
       "loading": "Loading saved references…",
       "error": "Saved references could not be loaded.",
-      "empty": "No saved references yet. Analyze an image to add one."
+      "empty": "No saved references yet. Analyze an image to add one.",
+      "delete": "Delete reference",
+      "confirmDelete": "Are you sure you want to delete this reference?"
     },
     "card": {
       "menu": "Creative actions",

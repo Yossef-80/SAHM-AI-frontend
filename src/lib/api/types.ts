@@ -166,6 +166,7 @@ export interface MarketingApi {
   analyzeReference(input: AnalyzeReferenceInput): Promise<ReferenceAnalysis>;
   listCreativeReferences(): Promise<CreativeReference[]>;
   updateCreativeReference(input: { id: string; favorite: boolean }): Promise<CreativeReference>;
+  deleteCreativeReference(id: string): Promise<void>;
   /**
    * Store an image for the *next chat message*. Deliberately separate from
    * `analyzeReference`: attaching a photo must not start Layla's creative

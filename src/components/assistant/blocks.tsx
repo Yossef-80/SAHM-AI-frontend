@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, ExternalLink, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, Download, ExternalLink, Image as ImageIcon, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -23,6 +23,7 @@ import {
   type ContextUsedBlock,
   type ErrorBlock,
   type FindingsBlock,
+  type ImagePreviewBlock,
   type MessageBlock,
   type MetricBlock,
   type QuestionWithOptionsBlock,
@@ -86,6 +87,8 @@ function KnownBlock({
       return <QuestionBlockView block={block} ctx={ctx} {...questionProps} />;
     case "error":
       return <ErrorBlockView block={block} ctx={ctx} />;
+    case "image_preview":
+      return <ImagePreviewBlockView block={block} />;
     default: {
       const _never: never = block;
       return <UnknownBlockView block={_never as AnyBlock} />;
@@ -893,6 +896,97 @@ export function ErrorBlockView({ block, ctx }: { block: ErrorBlock; ctx: BlockCo
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* image preview                                                       */
+/* ------------------------------------------------------------------ */
+
+export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
+  const t = useTranslations("assistant");
+  const [loadError, setLoadError] = useState(false);
+
+  const handleDownload = () => {
+    try {
+      const a = document.createElement("a");
+      a.href = block.url;
+      a.download = `creative-draft-${Date.now()}.png`;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      window.open(block.url, "_blank");
+    }
+  };
+
+  return (
+    <Card className="overflow-hidden border bg-card/60 shadow-sm my-2">
+      <CardHeader className="py-2.5 px-3 border-b flex flex-row items-center justify-between gap-2 space-y-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <ImageIcon className="h-4 w-4 text-primary shrink-0" />
+          <CardTitle className="text-sm font-semibold truncate">{block.title || t("imageDraftTitle")}</CardTitle>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {block.provider && (
+            <Badge variant="outline" className="text-[10px] uppercase font-mono px-1.5 py-0">
+              {block.provider}
+            </Badge>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs gap-1"
+            onClick={() => window.open(block.url, "_blank")}
+            title={t("openFullImage")}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{t("openFullImage")}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs gap-1"
+            onClick={handleDownload}
+            title={t("downloadImage")}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-3 space-y-2.5">
+        <div className="relative group overflow-hidden rounded-md border bg-muted/40 flex items-center justify-center min-h-[180px] max-h-[440px]">
+          {loadError ? (
+            <div className="p-6 text-center text-xs text-muted-foreground space-y-2">
+              <AlertCircle className="h-6 w-6 text-amber-500 mx-auto" />
+              <p>{t("imagePreviewError")}</p>
+              <Button size="sm" variant="outline" onClick={() => window.open(block.url, "_blank")}>
+                <ExternalLink className="me-1 h-3.5 w-3.5" />
+                {t("openLinkDirectly")}
+              </Button>
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={block.url}
+              alt={block.alt || block.title || "Generated image"}
+              className="max-h-[420px] w-auto max-w-full object-contain rounded transition-transform duration-200 group-hover:scale-[1.01]"
+              loading="lazy"
+              onError={() => setLoadError(true)}
+            />
+          )}
+        </div>
+        {block.prompt && (
+          <div className="rounded bg-muted/40 p-2 text-xs text-muted-foreground leading-relaxed border border-border/50">
+            <span className="font-semibold text-foreground me-1">{t("promptLabel")}:</span>
+            {block.prompt}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

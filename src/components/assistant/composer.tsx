@@ -8,7 +8,25 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslations } from "next-intl";
-import { ArrowUp, Compass, Crosshair, Globe, ImagePlus, Loader2, MessageSquare, Palette, Sparkles, Square, Star, Wand } from "lucide-react";
+import {
+  ArrowUp,
+  BarChart2,
+  Calendar,
+  Compass,
+  Crosshair,
+  Globe,
+  ImagePlus,
+  Layers,
+  Loader2,
+  MessageSquare,
+  Palette,
+  PenLine,
+  Sparkles,
+  Square,
+  Star,
+  Target,
+  Wand,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreativeReferences, useMemoryItems, useUploadChatAttachment } from "@/hooks/use-api";
@@ -26,16 +44,65 @@ interface MentionItem {
 const TOOLS_MENTIONS: MentionItem[] = [
   {
     type: "tool",
+    id: "tool_brand_identity",
+    name: "brand_identity",
+    desc: "الهوية البصرية: ألوان البراند، الخطوط، ونبرة الصوت",
+    icon: Palette,
+  },
+  {
+    type: "tool",
+    id: "tool_image_draft",
+    name: "image_draft",
+    desc: "ليلى: تصميم وتوليد مسودة صورة إعلانية بالذكاء الاصطناعي",
+    icon: Wand,
+  },
+  {
+    type: "tool",
+    id: "tool_ad_copy",
+    name: "ad_copy",
+    desc: "ليلى: صياغة نصوص إعلانية وعناوين وعروض مقنعة",
+    icon: PenLine,
+  },
+  {
+    type: "tool",
+    id: "tool_content_calendar",
+    name: "content_calendar",
+    desc: "عمر: خطة وجدول المحتوى التسويقي",
+    icon: Calendar,
+  },
+  {
+    type: "tool",
+    id: "tool_campaign_strategy",
+    name: "campaign_strategy",
+    desc: "عمر: تخطيط استراتيجية الحملة والميزانية والجمهور",
+    icon: Target,
+  },
+  {
+    type: "tool",
+    id: "tool_researcher",
+    name: "researcher",
+    desc: "نور: بحث استخباراتي معمق عن المنافسين والسوق",
+    icon: Compass,
+  },
+  {
+    type: "tool",
+    id: "tool_ad_library",
+    name: "ad_library",
+    desc: "نور: فحص إعلانات المنافسين في Meta Ad Library",
+    icon: Layers,
+  },
+  {
+    type: "tool",
     id: "tool_web_analyzer",
     name: "web_analyzer",
-    desc: "فحص الموقع، الأسعار، العروض والـ CTAs",
+    desc: "فحص صفحات الموقع، الأسعار، العروض والـ CTAs",
     icon: Globe,
   },
   {
     type: "tool",
     id: "tool_reviews",
     name: "reviews",
-    desc: "تقييمات العملاء ومشاعرهم الإيجابية والسلبية",
+    desc: "تحليل تقييمات العملاء ومشاعرهم الإيجابية والسلبية",
     icon: Star,
   },
   {
@@ -47,10 +114,10 @@ const TOOLS_MENTIONS: MentionItem[] = [
   },
   {
     type: "tool",
-    id: "tool_researcher",
-    name: "researcher",
-    desc: "نور: بحث استخباراتي معمق عن المنافسين",
-    icon: Compass,
+    id: "tool_meta_insights",
+    name: "meta_insights",
+    desc: "كريم: تحليل أداء الحملات ومؤشرات ROAS و CTR",
+    icon: BarChart2,
   },
 ];
 
@@ -90,6 +157,7 @@ export function Composer({
   // Mention State
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionTab, setMentionTab] = useState<"all" | "tools" | "styles" | "researches">("all");
 
   const memoryItems = useMemoryItems({ kind: "competitor_note" });
   const savedReferences = useCreativeReferences();
@@ -120,7 +188,7 @@ export function Composer({
   /**
    * Analyzed references the user saved from the Creatives tab.
    *
-   * These are the "@" targets that hand Layla a picture to work from. Mentioning
+   * These are the "/" targets that hand Layla a picture to work from. Mentioning
    * one attaches it as a reference chip; it never re-runs the analysis (the
    * analysis already happened when the user pressed "Start" in the library).
    */
@@ -139,11 +207,29 @@ export function Composer({
   const filteredMentions = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
-    const matchedReferences = references.filter((r) => r.name.toLowerCase().includes(q));
-    const matchedCompetitors = competitors.filter((c) => c.name.toLowerCase().includes(q));
-    const matchedTools = TOOLS_MENTIONS.filter((tool) => tool.name.toLowerCase().includes(q) || tool.desc.toLowerCase().includes(q));
-    return [...matchedReferences, ...matchedCompetitors, ...matchedTools];
+    const matchedReferences = references.filter((r) => r.name.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q));
+    const matchedCompetitors = competitors.filter((c) => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+    const matchedTools = TOOLS_MENTIONS.filter(
+      (tool) => tool.name.toLowerCase().includes(q) || tool.desc.toLowerCase().includes(q),
+    );
+    return [...matchedTools, ...matchedReferences, ...matchedCompetitors];
   }, [mentionQuery, competitors, references]);
+
+  const visibleMentions = useMemo(() => {
+    if (mentionTab === "tools") return filteredMentions.filter((m) => m.type === "tool");
+    if (mentionTab === "styles") return filteredMentions.filter((m) => m.type === "reference");
+    if (mentionTab === "researches") return filteredMentions.filter((m) => m.type === "competitor");
+    return filteredMentions;
+  }, [filteredMentions, mentionTab]);
+
+  const tabCounts = useMemo(() => {
+    return {
+      all: filteredMentions.length,
+      tools: filteredMentions.filter((m) => m.type === "tool").length,
+      styles: filteredMentions.filter((m) => m.type === "reference").length,
+      researches: filteredMentions.filter((m) => m.type === "competitor").length,
+    };
+  }, [filteredMentions]);
 
   const handleSelectMention = (item: MentionItem) => {
     if (!textareaRef.current) return;
@@ -151,11 +237,11 @@ export function Composer({
     const cursorPos = textareaRef.current.selectionStart || text.length;
     const textBefore = text.slice(0, cursorPos);
     const textAfter = text.slice(cursorPos);
-    const lastAtPos = textBefore.lastIndexOf("@");
-    if (lastAtPos === -1) return;
+    const lastSlashPos = Math.max(textBefore.lastIndexOf("/"), textBefore.lastIndexOf("@"));
+    if (lastSlashPos === -1) return;
 
-    const mentionText = `@${item.name} `;
-    const newText = textBefore.slice(0, lastAtPos) + mentionText + textAfter;
+    const mentionText = `/${item.name} `;
+    const newText = textBefore.slice(0, lastSlashPos) + mentionText + textAfter;
     setValue(newText);
     setMentionQuery(null);
     setMentionIndex(0);
@@ -172,7 +258,7 @@ export function Composer({
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
-        const newCursor = lastAtPos + mentionText.length;
+        const newCursor = lastSlashPos + mentionText.length;
         textareaRef.current.setSelectionRange(newCursor, newCursor);
       }
     }, 0);
@@ -183,7 +269,7 @@ export function Composer({
     setValue(val);
     const cursorPos = e.target.selectionStart || 0;
     const textBefore = val.slice(0, cursorPos);
-    const match = textBefore.match(/@([^\s@]*)$/);
+    const match = textBefore.match(/(?:^|\s)[/@]([^\s/@]*)$/);
     if (match) {
       setMentionQuery(match[1]);
       setMentionIndex(0);
@@ -251,20 +337,21 @@ export function Composer({
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (mentionQuery !== null && filteredMentions.length > 0) {
+    if (mentionQuery !== null && visibleMentions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setMentionIndex((prev) => (prev + 1) % filteredMentions.length);
+        setMentionIndex((prev) => (prev + 1) % visibleMentions.length);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setMentionIndex((prev) => (prev - 1 + filteredMentions.length) % filteredMentions.length);
+        setMentionIndex((prev) => (prev - 1 + visibleMentions.length) % visibleMentions.length);
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        handleSelectMention(filteredMentions[mentionIndex]);
+        const selected = visibleMentions[mentionIndex] || visibleMentions[0];
+        if (selected) handleSelectMention(selected);
         return;
       }
       if (e.key === "Escape") {
@@ -283,44 +370,102 @@ export function Composer({
 
   return (
     <form onSubmit={submit} className="relative space-y-2 rounded-lg border bg-card p-3">
-      {mentionQuery !== null && filteredMentions.length > 0 && (
-        <div className="absolute bottom-full start-3 mb-2 w-72 sm:w-80 max-h-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg z-50 animate-in fade-in-50 slide-in-from-bottom-2">
-          <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-            {t("mentionTitle")}
+      {mentionQuery !== null && (
+        <div className="absolute bottom-full start-3 mb-2 w-80 sm:w-96 max-h-72 overflow-hidden flex flex-col rounded-lg border bg-popover shadow-xl z-50 animate-in fade-in-50 slide-in-from-bottom-2">
+          <div className="p-2 border-b bg-muted/30 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-1">
+              <span>{t("mentionTitle")}</span>
+              <span className="text-[10px] text-muted-foreground/80 font-normal">
+                {visibleMentions.length}
+              </span>
+            </div>
+            {/* Category tabs */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5" role="tablist">
+              {(
+                [
+                  { id: "all", label: t("mentionTabAll"), count: tabCounts.all },
+                  { id: "tools", label: t("mentionTabTools"), count: tabCounts.tools },
+                  { id: "styles", label: t("mentionTabStyles"), count: tabCounts.styles },
+                  { id: "researches", label: t("mentionTabResearches"), count: tabCounts.researches },
+                ] as const
+              ).map((tab) => {
+                const isActive = mentionTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setMentionTab(tab.id);
+                      setMentionIndex(0);
+                    }}
+                    className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors shrink-0 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {tab.count > 0 && (
+                      <span
+                        className={`text-[10px] rounded-full px-1 py-0 ${
+                          isActive
+                            ? "bg-primary-foreground/20 text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="space-y-0.5">
-            {filteredMentions.map((item, idx) => {
-              const Icon = item.icon;
-              const isSelected = idx === mentionIndex;
-              return (
-                <button
-                  key={`${item.type}-${item.id}`}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSelectMention(item);
-                  }}
-                  onMouseEnter={() => setMentionIndex(idx)}
-                  className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-start transition-colors ${
-                    isSelected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-muted/60"
-                  }`}
-                >
-                  <div className={`p-1 rounded ${
-                    item.type === "competitor"
-                      ? "bg-rose-500/10 text-rose-500"
-                      : item.type === "reference"
-                        ? "bg-amber-500/10 text-amber-600"
-                        : "bg-primary/10 text-primary"
-                  }`}>
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold truncate">@{item.name}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">{item.desc}</div>
-                  </div>
-                </button>
-              );
-            })}
+
+          <div className="overflow-y-auto max-h-56 p-1 space-y-0.5">
+            {visibleMentions.length === 0 ? (
+              <div className="py-6 text-center text-xs text-muted-foreground">
+                {t("mentionEmpty")}
+              </div>
+            ) : (
+              visibleMentions.map((item, idx) => {
+                const Icon = item.icon;
+                const isSelected = idx === mentionIndex;
+                return (
+                  <button
+                    key={`${item.type}-${item.id}`}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectMention(item);
+                    }}
+                    onMouseEnter={() => setMentionIndex(idx)}
+                    className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-start transition-colors ${
+                      isSelected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-muted/60"
+                    }`}
+                  >
+                    <div
+                      className={`p-1.5 rounded shrink-0 ${
+                        item.type === "competitor"
+                          ? "bg-rose-500/10 text-rose-500"
+                          : item.type === "reference"
+                            ? "bg-amber-500/10 text-amber-600"
+                            : "bg-primary/10 text-primary"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold truncate">/{item.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{item.desc}</div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
       )}

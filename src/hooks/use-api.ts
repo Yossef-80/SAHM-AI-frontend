@@ -194,6 +194,13 @@ export const useUpdateCreativeReference = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.creativeReferences }),
   });
 };
+export const useDeleteCreativeReference = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteCreativeReference(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.creativeReferences }),
+  });
+};
 /**
  * Uploads an image for the next chat message.
  *

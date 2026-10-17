@@ -1302,6 +1302,13 @@ export class MockApi implements MarketingApi {
     reference.favorite = input.favorite;
     return clone(reference);
   }
+  async deleteCreativeReference(id: string) {
+    await simulate();
+    const idx = state.references.findIndex((r) => r.id === id);
+    if (idx !== -1) {
+      state.references.splice(idx, 1);
+    }
+  }
   async uploadChatAttachment(raw: { source: string; fileName?: string; mime?: string }) {
     await sleep(150);
     await simulate({ safe: true });

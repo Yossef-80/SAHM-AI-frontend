@@ -1126,6 +1126,10 @@ export class HttpApi implements MarketingApi {
     return this.parse(CreativeReferenceSchema, mapCreativeReference(raw), `/creatives/references/${input.id}`);
   }
 
+  async deleteCreativeReference(id: string): Promise<void> {
+    await this.raw(`/creatives/references/${id}`, { method: "DELETE" });
+  }
+
   async uploadChatAttachment(input: ChatAttachmentUpload) {
     const payload = await this.raw("/assistant/attachments", {
       method: "POST",

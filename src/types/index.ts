@@ -877,6 +877,17 @@ export const ContextUsedBlockSchema = z.object({
   truncated: z.boolean().default(false),
 });
 
+export const ImagePreviewBlockSchema = z.object({
+  type: z.literal("image_preview"),
+  title: z.string().default("Image Preview"),
+  url: z.string(),
+  alt: z.string().optional().default(""),
+  prompt: z.string().optional().nullable(),
+  provider: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
+});
+export type ImagePreviewBlock = z.infer<typeof ImagePreviewBlockSchema>;
+
 export const MessageBlockSchema = z.discriminatedUnion("type", [
   TextBlockSchema,
   FindingsBlockSchema,
@@ -887,6 +898,7 @@ export const MessageBlockSchema = z.discriminatedUnion("type", [
   ContextUsedBlockSchema,
   QuestionWithOptionsBlockSchema,
   ErrorBlockSchema,
+  ImagePreviewBlockSchema,
 ]);
 export type MessageBlock = z.infer<typeof MessageBlockSchema>;
 export type MessageBlockType = MessageBlock["type"];
