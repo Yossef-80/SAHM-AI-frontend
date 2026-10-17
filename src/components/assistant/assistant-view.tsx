@@ -11,7 +11,7 @@ import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { useChat } from "@/hooks/use-chat";
 import { useAgents } from "@/hooks/use-api";
 import { AUTO_PERSONA, useAssistantStore } from "@/store/assistant-store";
-import { LanguageSwitcher } from "@/components/layout/language-switcher";
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Composer, type CreativeMode } from "./composer";
 import { ConversationList } from "./conversation-list";
@@ -186,11 +186,10 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
                   <Images className="me-2 h-4 w-4" />
                   {t("openCreatives")}
                 </Link>
-              </Button>
-            ) : null}
-            <LanguageSwitcher compact={false} />
-            <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-              <SheetTrigger asChild>
+                </Button>
+              ) : null}
+              <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+                <SheetTrigger asChild>
                 <Button variant="ghost" size="sm" className="lg:hidden">
                   <History className="me-2 h-4 w-4" />
                   {t("history")}
