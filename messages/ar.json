@@ -791,7 +791,9 @@
     },
     "card": {
       "menu": "إجراءات الإبداع",
-      "video": "فيديو {seconds} ث"
+      "video": "فيديو {seconds} ث",
+      "delete": "حذف التصميم",
+      "confirmDelete": "هل أنت متأكد من حذف هذا التصميم؟"
     },
     "generateText": "اكتب بالذكاء",
     "textTools": {

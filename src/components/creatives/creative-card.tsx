@@ -1,13 +1,14 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Check, FileText, MoreHorizontal, Play } from "lucide-react";
+import { Check, FileText, MoreHorizontal, Play, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useAction } from "@/hooks/use-action";
+import { useDeleteCreative } from "@/hooks/use-api";
 import { cn } from "@/lib/utils";
 import type { Creative } from "@/types";
 
@@ -25,6 +26,7 @@ export function CreativeCard({ creative: c, selectable, selected, onSelect, show
   const tk = useTranslations("kind");
   const ta = useTranslations("actions");
   const { dispatch } = useAction();
+  const deleteCreative = useDeleteCreative();
 
   const preview =
     c.kind === "copy" ? (
@@ -87,6 +89,20 @@ export function CreativeCard({ creative: c, selectable, selected, onSelect, show
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => dispatch({ type: "ANALYZE_CREATIVE", payload: { creativeId: c.id } })}>{ta("ANALYZE_CREATIVE")}</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => dispatch({ type: "ADD_TO_CAMPAIGN", payload: { creativeId: c.id } })}>{ta("ADD_TO_CAMPAIGN")}</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  disabled={deleteCreative.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(t("card.confirmDelete"))) {
+                      deleteCreative.mutate(c.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="me-2 h-4 w-4" />
+                  {t("card.delete")}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

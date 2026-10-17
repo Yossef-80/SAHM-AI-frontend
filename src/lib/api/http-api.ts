@@ -1039,6 +1039,10 @@ export class HttpApi implements MarketingApi {
     throw unsupported("Creative detail", "The backend only exposes the creative list.");
   }
 
+  async deleteCreative(id: string) {
+    await this.raw(`/creatives/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
   /**
    * Upload a user-supplied image as a creative.
    *

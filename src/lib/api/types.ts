@@ -159,6 +159,7 @@ export interface MarketingApi {
   /* Creatives */
   listCreatives(campaignId?: string): Promise<Creative[]>;
   getCreative(id: string): Promise<Creative>;
+  deleteCreative(id: string): Promise<void>;
   generateCreative(input: GenerateCreativeInput): Promise<Creative[]>;
   /** Upload a user-supplied image; the backend stores its bytes inline. */
   uploadCreative(input: { file: File; campaignId?: string; note?: string }): Promise<Creative>;

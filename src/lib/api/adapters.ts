@@ -363,7 +363,17 @@ export function toCampaignCreateBody(draft: Json): Json {
 /* -------------------------------------------------------------------------- */
 
 export function mapCreative(raw: Json): Creative {
-  const url = str(raw.url) || str(raw.assetUrl) || str(raw.thumbnailUrl);
+  let url = str(raw.url) || str(raw.assetUrl) || str(raw.thumbnailUrl);
+  if (url && (url.includes("api.example.com") || url.includes("example.com"))) {
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1";
+    try {
+      const parsedApi = new URL(apiBase);
+      const parsedUrl = new URL(url);
+      url = `${parsedApi.origin}${parsedUrl.pathname}${parsedUrl.search}`;
+    } catch {
+      // fallback if URL parsing fails
+    }
+  }
   const created = iso(raw.createdAt);
   return {
     id: str(raw.id),

@@ -1169,6 +1169,13 @@ export class MockApi implements MarketingApi {
     await simulate();
     return clone(findOr404(state.creatives, id, "Creative"));
   }
+  async deleteCreative(id: string) {
+    await simulate();
+    const idx = state.creatives.findIndex((c) => c.id === id);
+    if (idx !== -1) {
+      state.creatives.splice(idx, 1);
+    }
+  }
   async uploadCreative(input: { file: File; campaignId?: string; note?: string }) {
     await sleep(600);
     await simulate();

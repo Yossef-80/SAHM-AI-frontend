@@ -185,6 +185,13 @@ export const useGenerateCreative = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["creatives"] }),
   });
 };
+export const useDeleteCreative = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteCreative(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["creatives"] }),
+  });
+};
 export const useCreativeReferences = () =>
   useQuery({ queryKey: qk.creativeReferences, queryFn: () => api.listCreativeReferences() });
 export const useUpdateCreativeReference = () => {
