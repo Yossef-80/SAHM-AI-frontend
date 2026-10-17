@@ -37,7 +37,12 @@ import type {
 export const useBusiness = () => useQuery({ queryKey: qk.business, queryFn: () => api.getBusiness() });
 export const useBrandProfile = () => useQuery({ queryKey: qk.brand, queryFn: () => api.getBrandProfile() });
 export const useBrandIdentity = () =>
-  useQuery({ queryKey: qk.brandIdentity, queryFn: () => api.getBrandIdentity(), staleTime: 60_000 });
+  useQuery({
+    queryKey: qk.brandIdentity,
+    queryFn: () => api.getBrandIdentity(),
+    refetchOnMount: "always",
+    staleTime: 5_000,
+  });
 export const useSyncBrandIdentity = () => {
   const qc = useQueryClient();
   return useMutation({
