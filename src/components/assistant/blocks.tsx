@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
@@ -907,17 +907,32 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
   const t = useTranslations("assistant");
   const [loadError, setLoadError] = useState(false);
 
+  const resolvedUrl = useMemo(() => {
+    let url = block.url;
+    if (url && (url.includes("api.example.com") || url.includes("example.com"))) {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1";
+      try {
+        const parsedApi = new URL(apiBase);
+        const parsedUrl = new URL(url);
+        url = `${parsedApi.origin}${parsedUrl.pathname}${parsedUrl.search}`;
+      } catch {
+        // fallback
+      }
+    }
+    return url;
+  }, [block.url]);
+
   const handleDownload = () => {
     try {
       const a = document.createElement("a");
-      a.href = block.url;
+      a.href = resolvedUrl;
       a.download = `creative-draft-${Date.now()}.png`;
       a.target = "_blank";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     } catch {
-      window.open(block.url, "_blank");
+      window.open(resolvedUrl, "_blank");
     }
   };
 
@@ -939,7 +954,7 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-xs gap-1"
-            onClick={() => window.open(block.url, "_blank")}
+            onClick={() => window.open(resolvedUrl, "_blank")}
             title={t("openFullImage")}
           >
             <ExternalLink className="h-3.5 w-3.5" />
@@ -963,7 +978,7 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
             <div className="p-6 text-center text-xs text-muted-foreground space-y-2">
               <AlertCircle className="h-6 w-6 text-amber-500 mx-auto" />
               <p>{t("imagePreviewError")}</p>
-              <Button size="sm" variant="outline" onClick={() => window.open(block.url, "_blank")}>
+              <Button size="sm" variant="outline" onClick={() => window.open(resolvedUrl, "_blank")}>
                 <ExternalLink className="me-1 h-3.5 w-3.5" />
                 {t("openLinkDirectly")}
               </Button>
@@ -971,7 +986,7 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={block.url}
+              src={resolvedUrl}
               alt={block.alt || block.title || "Generated image"}
               className="max-h-[420px] w-auto max-w-full object-contain rounded transition-transform duration-200 group-hover:scale-[1.01]"
               loading="lazy"
