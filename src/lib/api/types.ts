@@ -22,19 +22,30 @@ import type {
   MemoryItem,
   MemoryItemList,
   MemoryReindexResult,
+  ObservabilityStatus,
+  PlanId,
   CreateMemoryItemInput,
   RegisterInput,
   SessionInfo,
   UpdateAgentInput,
   UpdateContentItemInput,
   UpdateMemoryItemInput,
+  SubscriptionPlan,
+  SwitchPlanResponse,
   Usage,
+  WorkspaceSubscription,
   UsagePeriod,
   AddToCampaignInput,
   AgentTask,
   AssistantProgressEvent,
   AnalyzeReferenceInput,
   Audience,
+  SavedAudience,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
+  AudienceSuggestionResponse,
+  ChatAttachment,
+  ChatAttachmentUpload,
   ApplyRecommendationInput,
   BrandIdentityResponse,
   BrandIdentityUpdateRequest,
@@ -42,18 +53,30 @@ import type {
   Business,
   Campaign,
   CampaignDraft,
-  CampaignStrategy,
+  GeneratedCampaignStrategy,
+  MetaAdPlanAssistInput,
+  MetaAdPlanAssistResponse,
   Conversation,
   Creative,
+  CreativeReference,
   GenerateCreativeInput,
   GenerateStrategyInput,
   GenerateVariationsInput,
   Insight,
   Learning,
   ListCampaignsInput,
+  ListMetaAccountCampaignsInput,
+  MetaAccountCampaignPage,
   ListInsightsInput,
   Message,
   MetaConnection,
+  MetaTargetingSearch,
+  TargetingCategory,
+  MetaAdPlanSettings,
+  MetaAdPlanCreated,
+  MetaAdPlanActivationResponse,
+  MetaAdPlanApprovalResponse,
+  MetaAdInsightsResponse,
   MetricPoint,
   Recommendation,
   ReferenceAnalysis,
@@ -105,25 +128,55 @@ export interface MarketingApi {
 
   /* Campaigns */
   listCampaigns(input?: ListCampaignsInput): Promise<Campaign[]>;
+  /** Read-only page of campaigns from the connected Meta ad account; never saved to Sahm. */
+  listMetaAccountCampaigns(input?: ListMetaAccountCampaignsInput): Promise<MetaAccountCampaignPage>;
   getCampaign(id: string): Promise<Campaign>;
   createCampaign(draft: CampaignDraft): Promise<Campaign>;
+  /** Save local draft + pending Meta plan; no Meta writes occur. */
+  prepareMetaAdPlan(draft: CampaignDraft, plan: MetaAdPlanSettings): Promise<MetaAdPlanCreated>;
+  /** Read-only LLM + Meta MCP assistance; returns an editable draft, never writes. */
+  assistMetaAdPlan(input: MetaAdPlanAssistInput): Promise<MetaAdPlanAssistResponse>;
+  /** Approval phase 1: persist the diff only. */
+  previewMetaAdPlan(recommendationId: string): Promise<MetaAdPlanApprovalResponse>;
+  /** Approval phase 2: create the reviewed hierarchy, all PAUSED. */
+  confirmMetaAdPlan(recommendationId: string): Promise<MetaAdPlanApprovalResponse>;
+  activateMetaAdPlan(
+    recommendationId: string,
+    confirm: boolean,
+  ): Promise<MetaAdPlanActivationResponse>;
   updateCampaign(input: UpdateCampaignInput): Promise<Campaign>;
-  generateStrategy(input: GenerateStrategyInput): Promise<CampaignStrategy>;
+  generateStrategy(input: GenerateStrategyInput): Promise<GeneratedCampaignStrategy>;
   getCampaignPerformance(id: string): Promise<MetricPoint[]>;
   getCampaignRecommendations(id: string): Promise<Recommendation[]>;
   getCampaignLearnings(id: string): Promise<Learning[]>;
   getAudience(id: string): Promise<Audience>;
+  listAudiences(): Promise<SavedAudience[]>;
+  createAudience(input: SavedAudienceInput): Promise<SavedAudience>;
+  updateAudience(input: { id: string; patch: Partial<SavedAudienceInput> }): Promise<SavedAudience>;
+  archiveAudience(id: string): Promise<SavedAudience>;
+  suggestAudiences(input: AudienceSuggestionInput): Promise<AudienceSuggestionResponse>;
 
   /* Creatives */
   listCreatives(campaignId?: string): Promise<Creative[]>;
   getCreative(id: string): Promise<Creative>;
   generateCreative(input: GenerateCreativeInput): Promise<Creative[]>;
+  /** Upload a user-supplied image; the backend stores its bytes inline. */
+  uploadCreative(input: { file: File; campaignId?: string; note?: string }): Promise<Creative>;
   generateVariations(input: GenerateVariationsInput): Promise<Creative[]>;
   analyzeReference(input: AnalyzeReferenceInput): Promise<ReferenceAnalysis>;
+  listCreativeReferences(): Promise<CreativeReference[]>;
+  updateCreativeReference(input: { id: string; favorite: boolean }): Promise<CreativeReference>;
+  /**
+   * Store an image for the *next chat message*. Deliberately separate from
+   * `analyzeReference`: attaching a photo must not start Layla's creative
+   * workflow, switch the composer mode, or spend a vision call.
+   */
+  uploadChatAttachment(input: ChatAttachmentUpload): Promise<ChatAttachment>;
   addToCampaign(input: AddToCampaignInput): Promise<Campaign>;
 
   /* Insights & recommendations */
   getInsights(input?: ListInsightsInput): Promise<Insight[]>;
+  getCampaignAdInsights(id: string): Promise<MetaAdInsightsResponse>;
   getRecommendation(id: string): Promise<Recommendation>;
   applyRecommendation(input: ApplyRecommendationInput): Promise<Recommendation>;
   dismissRecommendation(input: ApplyRecommendationInput): Promise<Recommendation>;
@@ -148,6 +201,8 @@ export interface MarketingApi {
 
   /* Integrations */
   getMetaConnection(): Promise<MetaConnection>;
+  /** Resolve a phrase in one Meta targeting category; names alone are never applied. */
+  searchMetaInterests(query: string, category: TargetingCategory): Promise<MetaTargetingSearch>;
   connectMeta(): Promise<MetaConnection>;
   reauthMeta(): Promise<MetaConnection>;
   disconnectMeta(): Promise<MetaConnection>;
@@ -187,4 +242,12 @@ export interface MarketingApi {
   /* Usage & audit (P4.1 / P4.4) */
   getUsage(period?: UsagePeriod): Promise<Usage>;
   getAudit(filters?: AuditFilters): Promise<AuditList>;
+
+  /* Subscriptions & observability.
+     Plans are free quota tiers, not billing: `switchPlan` moves the workspace's
+     daily token ceiling and takes effect on the next run. */
+  getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
+  getSubscription(): Promise<WorkspaceSubscription>;
+  switchPlan(planId: PlanId): Promise<SwitchPlanResponse>;
+  getObservabilityStatus(): Promise<ObservabilityStatus>;
 }

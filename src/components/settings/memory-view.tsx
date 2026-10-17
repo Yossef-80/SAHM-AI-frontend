@@ -244,6 +244,7 @@ export function MemoryView() {
 
       <AsyncBoundary
         isLoading={query_.isLoading}
+        isPending={query_.isPending}
         isError={query_.isError}
         error={query_.error}
         data={query_.data}

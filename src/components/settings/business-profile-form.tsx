@@ -240,6 +240,14 @@ export function BusinessProfileForm() {
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => (d ? { ...d, [key]: value } : d));
   const listSet = (key: "goals" | "keyOffers" | "competitors", next: string[]) => setDraft((d) => (d ? { ...d, [key]: next } : d));
+  const addStylePreset = (preset: string) => {
+    if (!draft) return;
+    const current = asText(draft.visualStyle).trimEnd();
+    const alreadyAdded = current
+      .split(/\r?\n/)
+      .some((line) => line.trim().replace(/^[-•]\s*/, "") === preset);
+    if (!alreadyAdded) set("visualStyle", current ? `${current}\n- ${preset}` : `- ${preset}`);
+  };
 
   const submit = async () => {
     try {
@@ -253,6 +261,7 @@ export function BusinessProfileForm() {
   return (
     <AsyncBoundary
       isLoading={query.isLoading}
+      isPending={query.isPending}
       isError={query.isError}
       error={query.error}
       data={query.data}
@@ -404,6 +413,26 @@ export function BusinessProfileForm() {
                   onClear={() => set("visualStyle", "")}
                   clearLabel={t("clear")}
                 />
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs font-medium">{t("stylePresetsTitle")}</p>
+                    <p className="text-xs text-muted-foreground">{t("stylePresetsHint")}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {["minimal", "editorial", "cinematic", "premium", "natural", "playful", "bold", "pastel"].map((preset) => (
+                      <Button
+                        key={preset}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!canEdit || save.isPending}
+                        onClick={() => addStylePreset(t(`stylePresets.${preset}`))}
+                      >
+                        + {t(`stylePresets.${preset}`)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
                 <TextField
                   label={t("targetAudience")}
                   hint={t("targetAudienceHint")}

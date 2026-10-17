@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2, Trash2 } from "lucide-react";
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { ActionButton } from "@/components/shared/action-button";
-import { useDeleteContentItem, useUpdateContentItem } from "@/hooks/use-api";
+import { useDeleteContentItem, useImageGenerationReady, useUpdateContentItem } from "@/hooks/use-api";
 import { ContentChannelSchema, ContentFormatSchema, ContentStatusSchema, type Campaign, type ContentChannel, type ContentFormat, type ContentItem, type ContentStatus } from "@/types";
 
 interface Props {
@@ -26,6 +27,11 @@ export function ContentItemSheet({ item, onClose, campaigns }: Props) {
   const tc = useTranslations("common");
   const update = useUpdateContentItem();
   const remove = useDeleteContentItem();
+  const imageGen = useImageGenerationReady();
+  // Only image-kind entries hit the image provider. Reels and stories route to
+  // the assistant prompt flow, which needs no provider, so they stay enabled.
+  const needsImageProvider = item?.format !== "reel" && item?.format !== "story";
+  const imageBlocked = needsImageProvider && !imageGen.isLoading && !imageGen.ready;
 
   const [form, setForm] = useState({ title: "", date: "", time: "", caption: "", channel: "instagram" as ContentChannel, format: "post" as ContentFormat, status: "idea" as ContentStatus });
   useEffect(() => {
@@ -114,16 +120,29 @@ export function ContentItemSheet({ item, onClose, campaigns }: Props) {
             {remove.isError && <p className="text-sm text-destructive">{remove.error instanceof Error ? remove.error.message : tc("errorGeneric")}</p>}
 
             <div className="mt-auto space-y-2 pt-2">
-              <ActionButton
-                variant="outline"
-                className="w-full"
-                action={{
-                  type: "CREATE_CREATIVE",
-                  payload: { kind: item.format === "reel" || item.format === "story" ? "video" : "image", brief: `${item.title}. ${item.hook ?? ""} ${item.caption ?? ""}`.trim(), campaignId: item.campaignId },
-                }}
-              >
-                {t("item.createCreative")}
-              </ActionButton>
+              {imageBlocked ? (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                  <p>{t("item.imageGenOff")}</p>
+                  <Link
+                    href="/settings/connectors"
+                    className="mt-1.5 inline-block font-medium underline underline-offset-2"
+                  >
+                    {t("item.imageGenLink")}
+                  </Link>
+                </div>
+              ) : (
+                <ActionButton
+                  variant="outline"
+                  className="w-full"
+                  disabled={needsImageProvider && imageGen.isLoading}
+                  action={{
+                    type: "CREATE_CREATIVE",
+                    payload: { kind: item.format === "reel" || item.format === "story" ? "video" : "image", brief: `${item.title}. ${item.hook ?? ""} ${item.caption ?? ""}`.trim(), campaignId: item.campaignId },
+                  }}
+                >
+                  {t("item.createCreative")}
+                </ActionButton>
+              )}
               <div className="flex gap-2">
                 <Button
                   variant="ghost"
@@ -139,7 +158,7 @@ export function ContentItemSheet({ item, onClose, campaigns }: Props) {
                   disabled={busy || !form.title.trim() || !form.date}
                   onClick={() =>
                     update.mutate(
-                      { id: item.id, patch: { ...form, time: form.time || undefined, caption: form.caption || undefined } },
+                      { id: item.id, patch: { ...form, time: form.time || null, caption: form.caption || null } },
                       { onSuccess: onClose },
                     )
                   }

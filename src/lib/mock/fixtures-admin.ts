@@ -18,6 +18,8 @@ import type {
   MemoryKind,
   SessionInfo,
   Usage,
+  ObservabilityStatus,
+  SubscriptionPlan,
 } from "@/types";
 
 export const MOCK_USER_ID = "usr_2f8a41c7";
@@ -188,12 +190,15 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: true,
     provider: "meta_ads",
+    providers: [],
+    missingRequired: [],
     placeholder: false,
-    notes: "Reads campaign performance and publishes ad sets.",
+    notes: "Demo-only settings. In production, an admin configures Meta; campaign creation still requires a separate review and approval.",
     fields: [
       field("appId", "App ID", { required: true, value: "102938475610293", source: "env", maxLength: 120 }),
       field("appSecret", "App secret", { secret: true, required: true, hasValue: true, masked: "••••••••", source: "env" }),
       field("adAccountId", "Ad account ID", { required: true, value: "act_204811223344", source: "env", maxLength: 120 }),
+      field("pageId", "Facebook Page ID", { required: true, value: "fb_page_demo", source: "env", maxLength: 120 }),
       field("accessToken", "Access token", {
         secret: true,
         required: true,
@@ -211,6 +216,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: true,
     configured: true,
     provider: "google_places",
+    providers: [],
+    missingRequired: [],
     placeholder: false,
     notes: "Powers local competitor research and store discovery.",
     fields: [
@@ -225,6 +232,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: false,
     provider: "dataforseo",
+    providers: ["mock", "dataforseo"],
+    missingRequired: ["login", "password"],
     placeholder: true,
     notes: "Keyword volumes and SERP data. Unconfigured tools return placeholder numbers.",
     fields: [
@@ -239,6 +248,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: true,
     provider: "mock",
+    providers: ["mock", "openai", "stability"],
+    missingRequired: [],
     placeholder: true,
     notes: "Creative generation. `mock` returns deterministic placeholder images.",
     fields: [
@@ -254,6 +265,8 @@ export const mockConnectors: Connector[] = [
     hasOverride: false,
     configured: true,
     provider: "none",
+    providers: ["mock", "tavily", "serper", "brave"],
+    missingRequired: [],
     placeholder: true,
     notes: "Market and competitor research. `none` disables the tool.",
     fields: [field("provider", "Provider", { value: "none", source: "default", maxLength: 30 })],
@@ -277,6 +290,12 @@ const usageBase = {
   businessId: "biz_nile",
   calls: 1_284,
   budgetSource: "default",
+  estimatedCalls: 0,
+  // Demo data is unpriced on purpose: the real endpoint returns null until the
+  // workspace configures a token price, and the UI must handle exactly that.
+  estimatedCostUsd: null,
+  costPerMillionInUsd: 0,
+  costPerMillionOutUsd: 0,
 };
 
 export const mockUsage: Record<string, Usage> = {
@@ -305,6 +324,12 @@ export const mockUsage: Record<string, Usage> = {
       { key: "salma", tokens: 98_000, share: 0.1716 },
       { key: "karim", tokens: 59_000, share: 0.1033 },
     ],
+    byAction: [
+      { key: "chat.turn", tokens: 262_000, share: 0.4588 },
+      { key: "research.analyze_competitor", tokens: 171_000, share: 0.2995 },
+      { key: "creative.reference", tokens: 92_000, share: 0.1611 },
+      { key: "content.calendar", tokens: 46_000, share: 0.0806 },
+    ],
   },
   // Deliberately over budget: the UI has to render a 100%+ meter without clamping.
   month: {
@@ -331,6 +356,12 @@ export const mockUsage: Record<string, Usage> = {
       { key: "omar", tokens: 2_557_590, share: 0.3 },
       { key: "salma", tokens: 1_705_060, share: 0.2 },
       { key: "karim", tokens: 852_530, share: 0.1 },
+    ],
+    byAction: [
+      { key: "chat.turn", tokens: 3_903_000, share: 0.4579 },
+      { key: "research.analyze_competitor", tokens: 2_561_000, share: 0.3004 },
+      { key: "creative.image", tokens: 1_378_000, share: 0.1617 },
+      { key: "campaign.strategy", tokens: 683_300, share: 0.0802 },
     ],
   },
 };
@@ -439,3 +470,99 @@ export const mockMemoryKindOrder: readonly MemoryKind[] = [
   "learning",
   "reference_analysis",
 ];
+
+/* Subscriptions & observability -------------------------------------------- */
+
+/**
+ * Mirrors the backend catalog (`app/core/subscriptions.py`). Every plan is a
+ * free quota tier — `monthlyPriceUsd: 0` is not a placeholder, it is the
+ * product decision — and the budgets are the values the cost guard enforces.
+ */
+export const mockSubscriptionPlans: SubscriptionPlan[] = [
+  {
+    id: "free",
+    name: "Community Free",
+    description: "Free starter tier for solo marketers and small teams.",
+    dailyTokenBudget: 100_000,
+    monthlyPriceUsd: 0,
+    isFree: true,
+    features: [
+      "All 5 specialist agents (Omar, Layla, Karim, Nour, Salma)",
+      "Local diagnostic file logging (LLM & agent tracing)",
+      "LangSmith tracing — 5,000 traces/month",
+      "Langfuse monitoring — 50,000 events/month",
+      "Real-time token & cost estimation per run",
+      "Content strategy & calendar generation",
+    ],
+    supportedModels: ["Ollama (local)", "Gemini 1.5 Flash", "GPT-4o-mini", "Mock"],
+    maxWorkspaces: 2,
+  },
+  {
+    id: "pro",
+    name: "Pro Marketing OS",
+    description: "High-volume operations with strong-tier reasoning.",
+    dailyTokenBudget: 1_000_000,
+    monthlyPriceUsd: 0,
+    isFree: true,
+    features: [
+      "Everything in Community Free",
+      "1,000,000 daily token allowance",
+      "Strong-tier models (Claude 3.5 Sonnet, GPT-4o, DeepSeek)",
+      "Multi-agent creative campaigns & reference vision",
+      "Competitor ad-library analysis & strategy gaps",
+      "Full LangSmith & Langfuse cloud tracing",
+    ],
+    supportedModels: ["Claude 3.5 Sonnet", "GPT-4o", "Gemini 1.5 Pro", "DeepSeek R1", "Ollama"],
+    maxWorkspaces: 10,
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise Self-Hosted",
+    description: "Agency workloads on a private deployment with a dedicated VLM.",
+    dailyTokenBudget: 10_000_000,
+    monthlyPriceUsd: 0,
+    isFree: true,
+    features: [
+      "Everything in Pro",
+      "10,000,000 daily token allowance",
+      "Dedicated vision-language model endpoints",
+      "Self-hosted Langfuse via Docker",
+      "Full tenant audit logging & security headers",
+      "Unlimited multi-workspace routing",
+    ],
+    supportedModels: ["All cloud & local models", "Custom gateway endpoints", "Private Ollama VPC"],
+    maxWorkspaces: 100,
+  },
+];
+
+/**
+ * One backend on and one off on purpose: the page has to prove it renders the
+ * "disabled" state as a configuration hint rather than an error.
+ */
+export const mockObservability: ObservabilityStatus = {
+  localLogging: {
+    status: "active",
+    logDir: "logs",
+    logLevel: "info",
+    format: "text",
+    llmLog: "logs/providers/llm.log",
+    agentLogs: "logs/agents/",
+    diagnosticLog: "logs/agents/diagnostic.log",
+  },
+  langsmith: {
+    enabled: true,
+    project: "sahm-ai",
+    endpoint: "https://api.smith.langchain.com",
+  },
+  langfuse: {
+    enabled: false,
+    host: "https://cloud.langfuse.com",
+    publicKeyConfigured: false,
+    publicKeyPreview: null,
+  },
+  costEstimator: {
+    status: "active",
+    supportedModelsCount: 25,
+    freeModels: ["mock", "ollama", "local"],
+  },
+};

@@ -2,15 +2,25 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { Megaphone, Plus, X, Image as ImageIcon, Lightbulb, Crosshair } from "lucide-react";
+import { Megaphone, Plus, X, Image as ImageIcon, ImagePlus, Lightbulb, Crosshair, FileSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAssistantStore } from "@/store/assistant-store";
-import { useCampaigns, useCreatives, useMemoryItems } from "@/hooks/use-api";
+import { useCampaigns, useCreativeReferences, useCreatives, useMemoryItems } from "@/hooks/use-api";
 import type { ContextChip } from "@/types";
 
-const icon = { campaign: Megaphone, creative: ImageIcon, insight: Lightbulb, competitor: Crosshair };
+const icon = {
+  campaign: Megaphone,
+  creative: ImageIcon,
+  insight: Lightbulb,
+  competitor: Crosshair,
+  research: FileSearch,
+  reference: ImageIcon,
+  // An attached photo is "a picture to talk about" — same glyph as a creative,
+  // different lifecycle (turn-scoped, never sticky context).
+  attachment: ImagePlus,
+};
 
 export function ContextChips() {
   const t = useTranslations("assistant");
@@ -20,6 +30,7 @@ export function ContextChips() {
   const remove = useAssistantStore((s) => s.removeContext);
   const campaigns = useCampaigns();
   const creatives = useCreatives();
+  const references = useCreativeReferences();
   const memoryItems = useMemoryItems({ kind: "competitor_note" });
 
   const competitors = useMemo(() => {
@@ -83,6 +94,21 @@ export function ContextChips() {
               {competitors.slice(0, 8).map((c) => (
                 <DropdownMenuItem key={c.id} disabled={has({ kind: "competitor", id: c.id, label: c.name })} onClick={() => add({ kind: "competitor", id: c.id, label: c.name })}>
                   {c.name}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
+          {(references.data ?? []).length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("savedReferences")}</DropdownMenuLabel>
+              {(references.data ?? []).slice(0, 8).map((reference) => (
+                <DropdownMenuItem
+                  key={reference.id}
+                  disabled={has({ kind: "reference", id: reference.id, label: reference.sourceName })}
+                  onClick={() => add({ kind: "reference", id: reference.id, label: reference.sourceName })}
+                >
+                  {reference.sourceName}
                 </DropdownMenuItem>
               ))}
             </>

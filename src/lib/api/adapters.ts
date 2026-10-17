@@ -21,7 +21,7 @@
  * is cheap to reason about and easy to test.
  */
 
-import { ActionTypeSchema, MEMORY_KINDS } from "@/types";
+import { ActionTypeSchema, AudienceTargetingSchema, CampaignAudienceSnapshotSchema, MEMORY_KINDS, TargetingCategorySchema } from "@/types";
 import type {
   ActionType,
   Agent,
@@ -46,12 +46,19 @@ import type {
   ContentStatus,
   Conversation,
   Creative,
+  CreativeReference,
   Insight,
   MemoryItem,
   MemoryItemList,
   Message,
   MessageBlock,
   MetaConnection,
+  MetaAccountCampaignPage,
+  ObservabilityStatus,
+  PlanId,
+  SubscriptionPlan,
+  SwitchPlanResponse,
+  WorkspaceSubscription,
   Recommendation,
   ReferenceAnalysis,
   Role,
@@ -240,6 +247,57 @@ export function mapBrandProfile(profile: Json): BrandProfile {
 /* Campaigns                                                                  */
 /* -------------------------------------------------------------------------- */
 
+function mapCampaignAudienceSnapshot(raw: unknown) {
+  if (!isRecord(raw)) return null;
+  const source = isRecord(raw.targeting) ? raw.targeting : {};
+  const list = (value: unknown) => asArray(value).map((item) => str(item)).filter(Boolean);
+  const genders = list(source.genders).filter((value) => value === "all" || value === "male" || value === "female");
+  const rawTargetingTargets = asArray(source.targetingTargets ?? source.targeting_targets);
+  const parsedTargetingTargets = rawTargetingTargets.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const id = str(item.id);
+    const name = str(item.name);
+    if (!id || !name) return [];
+    const rawCategory = item.category;
+    if (rawCategory === undefined || rawCategory === null || rawCategory === "") {
+      return [{ id, name, category: "interests" as const }];
+    }
+    const category = TargetingCategorySchema.safeParse(rawCategory);
+    return category.success ? [{ id, name, category: category.data }] : [];
+  });
+  const legacyInterestTargets = asArray(source.interestTargets ?? source.interest_targets).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const id = str(item.id);
+    const name = str(item.name);
+    return id && name ? [{ id, name }] : [];
+  });
+  const interestTargets = legacyInterestTargets.length
+    ? legacyInterestTargets
+    : parsedTargetingTargets
+        .filter((item) => item.category === "interests")
+        .map(({ id, name }) => ({ id, name }));
+  const targetingTargets = parsedTargetingTargets.length
+    ? parsedTargetingTargets
+    : interestTargets.map(({ id, name }) => ({ id, name, category: "interests" as const }));
+  const targeting = AudienceTargetingSchema.parse({
+    ageMin: num(source.ageMin ?? source.age_min, 18),
+    ageMax: num(source.ageMax ?? source.age_max, 65),
+    genders: genders.length ? genders : ["all"],
+    locations: list(source.locations),
+    countries: list(source.countries),
+    interests: list(source.interests),
+    interestTargets,
+    targetingTargets,
+    behaviors: list(source.behaviors),
+  });
+  return CampaignAudienceSnapshotSchema.parse({
+    id: str(raw.id),
+    name: str(raw.name, "Saved audience"),
+    description: nullableStr(raw.description),
+    targeting,
+  });
+}
+
 export function mapCampaign(raw: Json, detail?: Json): Campaign {
   const creatives = asArray(detail?.creatives);
   const creativeIds = creatives.map((c) => str(c.id)).filter(Boolean);
@@ -268,7 +326,8 @@ export function mapCampaign(raw: Json, detail?: Json): Campaign {
     currency: mapCurrency(raw.currency),
     startDate: iso(raw.startDate ?? raw.createdAt),
     endDate: opt(raw.endDate) ? iso(raw.endDate) : null,
-    audienceId: ((nullableStr(raw.targetAudience) ?? undefined)) ?? null,
+    audienceId: nullableStr(raw.audienceId ?? raw.audience_id),
+    audienceSnapshot: mapCampaignAudienceSnapshot(raw.audienceSnapshot ?? raw.audience_snapshot),
     strategy: null,
     creativeIds: creativeIds.length ? creativeIds : [],
     metaCampaignId: nullableStr(raw.metaCampaignId),
@@ -294,7 +353,8 @@ export function toCampaignCreateBody(draft: Json): Json {
     startDate: iso(draft.startDate),
     endDate: draft.endDate ? iso(draft.endDate) : null,
     targetAudience: audienceLabel || null,
-    notes: str(draft.launchNow) ? "Launch requested from the campaign wizard." : null,
+    audienceId: nullableStr(audience.id),
+    notes: null,
   };
 }
 
@@ -311,9 +371,12 @@ export function mapCreative(raw: Json): Creative {
     kind: "image",
     title: str(raw.prompt, "Creative").slice(0, 80),
     status: str(raw.status, "ready") === "ready" ? "ready" : "draft",
+    prompt: str(raw.prompt) || undefined,
     assetUrl: url || undefined,
     thumbnailUrl: url || undefined,
-    aspectRatio: mapAspectRatio(raw.aspectRatio),
+    // Tool outputs are plain BaseModels with no alias generator, so this field
+    // arrives snake_case from the backend; camelCase is kept for the mocks.
+    aspectRatio: mapAspectRatio(raw.aspectRatio ?? raw.aspect_ratio),
     tags: [],
     createdAt: created,
     updatedAt: iso(raw.updatedAt ?? created),
@@ -331,21 +394,56 @@ export function mapReferenceAnalysis(raw: Json): ReferenceAnalysis {
   const style = isRecord(raw.style) ? raw.style : {};
   const observedOffers = asArray(raw.observedOffers).map((o) => str(o)).filter(Boolean);
   const observedCta = asArray(raw.observedCta).map((o) => str(o)).filter(Boolean);
+  const elements = asArray(style.elements).filter(isRecord).map((element) => ({
+    element: str(element.element),
+    relativePosition: str(element.relativePosition ?? element.relative_position),
+    relativeSize: str(element.relativeSize ?? element.relative_size),
+    visualAttributes: str(element.visualAttributes ?? element.visual_attributes),
+    exactText: str(element.exactText ?? element.exact_text),
+    layerOrder: typeof element.layerOrder === "number"
+      ? element.layerOrder
+      : typeof element.layer_order === "number"
+        ? element.layer_order
+        : null,
+  }));
   return {
     id: str(raw.id, "ref_unknown"),
     sourceUrl: (nullableStr(raw.source) ?? undefined),
-    sourceName: str(raw.model, "Reference creative"),
+    sourceName: str(raw.sourceName ?? raw.source_name ?? raw.model, "Reference creative"),
     kind: "image",
-    hook: str(style.hookType),
-    structure: [str(style.composition), str(style.layoutPattern)].filter(Boolean),
-    visualStyle: [str(style.typography), str(style.tone), str(style.colorMood), ...asArray(style.palette).map((p) => str(p))].filter(Boolean),
+    status: (["ok", "partial", "unavailable"].includes(str(raw.status, "ok"))
+      ? str(raw.status, "ok")
+      : "ok") as ReferenceAnalysis["status"],
+    unavailableReason: nullableStr(raw.unavailableReason ?? raw.unavailable_reason) ?? undefined,
+    hook: str(style.hookType ?? style.hook_type),
+    structure: [str(style.composition), str(style.layoutPattern ?? style.layout_pattern)].filter(Boolean),
+    visualStyle: [str(style.typography), str(style.tone), str(style.colorMood ?? style.color_mood), ...asArray(style.palette).map((p) => str(p))].filter(Boolean),
     tone: [str(style.tone)].filter(Boolean),
     cta: observedCta[0],
-    strengths: observedOffers,
+    strengths: [],
     weaknesses: [],
-    estimatedPerformance: "medium",
+    estimatedPerformance: "unknown",
     inspiredBrief: str(raw.summary, style.notes && str(style.notes)),
-    createdAt: iso(raw.createdAt),
+    style: {
+      canvasRatio: str(style.canvasRatio ?? style.canvas_ratio),
+      background: str(style.background),
+      lighting: str(style.lighting),
+      visibleText: asArray(style.visibleText ?? style.visible_text).map((item) => str(item)).filter(Boolean),
+      elements,
+      palette: asArray(style.palette).map((item) => str(item)).filter(Boolean),
+      composition: str(style.composition),
+      typography: str(style.typography),
+      tone: str(style.tone),
+      layoutPattern: str(style.layoutPattern ?? style.layout_pattern),
+      hookType: str(style.hookType ?? style.hook_type),
+      colorMood: str(style.colorMood ?? style.color_mood),
+      textDensity: str(style.textDensity ?? style.text_density),
+      brandElements: asArray(style.brandElements ?? style.brand_elements).map((item) => str(item)).filter(Boolean),
+      notes: str(style.notes),
+    },
+    observedOffers,
+    observedCta,
+    createdAt: iso(raw.createdAt ?? raw.created_at),
   };
 }
 
@@ -370,6 +468,18 @@ export function mapInsight(raw: Json): Insight {
     action: null,
     metric: firstKey ? { label: firstKey.replace(/_/g, " "), value: num(firstValue), unit: undefined, delta: undefined } : undefined,
     createdAt: iso(raw.createdAt),
+  };
+}
+
+export function mapCreativeReference(raw: Json): CreativeReference {
+  const mapped = mapReferenceAnalysis(raw);
+  return {
+    id: str(raw.id),
+    sourceName: str(raw.sourceName ?? raw.source_name, mapped.sourceName),
+    summary: str(raw.summary, mapped.inspiredBrief),
+    style: mapped.style,
+    favorite: bool(raw.favorite),
+    createdAt: nullableStr(raw.createdAt ?? raw.created_at),
   };
 }
 
@@ -426,27 +536,27 @@ export const ACTION_TASK_MAP: Record<string, { task: string; personaId: string }
   GENERATE_MARKETING_STRATEGY: { task: "marketing_strategy", personaId: "omar" },
   CREATE_CAMPAIGN: { task: "campaign_strategy", personaId: "omar" },
   GENERATE_CONTENT_CALENDAR: { task: "content_calendar", personaId: "omar" },
-  CREATE_CREATIVE: { task: "creative_brief", personaId: "layla" },
-  GENERATE_TEXT: { task: "ad_copy", personaId: "layla" },
-  GENERATE_VARIATIONS: { task: "ad_variations", personaId: "layla" },
-  ANALYZE_CREATIVE: { task: "ad_variations", personaId: "layla" },
   ANALYZE_CAMPAIGN: { task: "performance_analysis", personaId: "karim" },
   OPTIMIZE_CAMPAIGN: { task: "optimization_proposal", personaId: "salma" },
   ADD_TO_CAMPAIGN: { task: "optimization_proposal", personaId: "salma" },
   UPDATE_CAMPAIGN: { task: "optimization_proposal", personaId: "salma" },
   APPLY_RECOMMENDATION: { task: "optimization_proposal", personaId: "salma" },
   CONNECT_META: { task: "optimization_proposal", personaId: "salma" },
-  UPDATE_AGENT: { task: "ad_copy", personaId: "layla" },
 };
 
 /** Reverse lookup: backend `task_name` → the `ActionType` the UI dispatched. */
-const TASK_TYPE_MAP: Record<string, string> = Object.entries(ACTION_TASK_MAP).reduce<Record<string, string>>(
-  (acc, [action, { task }]) => {
-    if (!acc[task]) acc[task] = action;
-    return acc;
-  },
-  {},
-);
+const TASK_TYPE_MAP: Record<string, string> = {
+  ...Object.entries(ACTION_TASK_MAP).reduce<Record<string, string>>(
+    (acc, [action, { task }]) => {
+      if (!acc[task]) acc[task] = action;
+      return acc;
+    },
+    {},
+  ),
+  // Historical assistant cards map to the new Write with AI dialog action;
+  // this does not make Layla's old `/tasks` endpoint executable again.
+  ad_variations: "GENERATE_VARIATIONS",
+};
 
 function mapStepStatus(v: unknown): AgentTask["status"] {
   const s = str(v, "pending");
@@ -460,8 +570,13 @@ export function mapAgentTask(raw: Json, fallbackType = "ANALYZE_CAMPAIGN"): Agen
   const rawProgress = num(raw.progress);
   const progress = clamp(rawProgress <= 1 ? rawProgress * 100 : rawProgress, 0, 100);
   const result = isRecord(raw.result) ? raw.result : {};
-  const recommendationId = str(result.recommendationId);
-  const campaignId = str(result.campaignId);
+  const output = isRecord(result.output) ? result.output : result;
+  const recommendationId = str(
+    result.recommendationId ?? result.recommendation_id ?? output.recommendationId ?? output.recommendation_id,
+  );
+  const campaignId = str(
+    result.campaignId ?? result.campaign_id ?? output.campaignId ?? output.campaign_id,
+  );
   const conversationId = str(raw.conversationId);
   return {
     id: str(raw.id),
@@ -477,6 +592,7 @@ export function mapAgentTask(raw: Json, fallbackType = "ANALYZE_CAMPAIGN"): Agen
         : conversationId
           ? { entity: "conversation", id: conversationId }
           : null,
+    result: isRecord(raw.result) ? raw.result : null,
     error: nullableStr(raw.error),
     createdAt: iso(raw.createdAt),
     updatedAt: iso(raw.updatedAt),
@@ -576,6 +692,21 @@ export function mapBlock(raw: unknown): AnyBlock | null {
       const isBrandAction = (s: string) =>
         /brand|identity|تسمية|هوية|براند/i.test(s);
 
+      const normalizePayload = (p: Record<string, unknown>) => {
+        const out = { ...p };
+        for (const [wireKey, uiKey] of [
+          ["campaign_id", "campaignId"],
+          ["creative_id", "creativeId"],
+          ["conversation_id", "conversationId"],
+        ] as const) {
+          if (out[uiKey] === undefined && out[wireKey] !== undefined) {
+            out[uiKey] = out[wireKey];
+          }
+          delete out[wireKey];
+        }
+        return out;
+      };
+
       const rawActions = asArray(raw.actions);
       let actions: ActionCardBlock["actions"] = [];
 
@@ -601,7 +732,7 @@ export function mapBlock(raw: unknown): AnyBlock | null {
           return {
             type: resolvedType,
             label: actLabel,
-            payload: { ...payload, ...actPayload, task: taskName || actType },
+            payload: normalizePayload({ ...payload, ...actPayload, task: taskName || actType }),
           };
         });
       } else {
@@ -617,7 +748,7 @@ export function mapBlock(raw: unknown): AnyBlock | null {
           {
             type: resolvedType,
             label: str(raw.label, isUsage ? "عرض الاستهلاك" : isBrand ? "Manage Brand Profile" : "Run"),
-            payload: { ...payload, ...inputs, task: taskName },
+            payload: normalizePayload({ ...payload, ...inputs, task: taskName }),
           },
         ];
       }
@@ -758,6 +889,24 @@ export function mapConversationDetail(raw: Json): { conversation: Conversation; 
       messageCount: messages.length,
       createdAt: iso(raw.createdAt),
       updatedAt: iso(raw.updatedAt),
+      context: (() => {
+        const ctx = isRecord(raw.context) ? raw.context : {};
+        return {
+          campaignId: nullableStr(ctx.campaignId ?? ctx.campaign_id) ?? undefined,
+          creativeId: nullableStr(ctx.creativeId ?? ctx.creative_id) ?? undefined,
+          insightId: nullableStr(ctx.insightId ?? ctx.insight_id) ?? undefined,
+          referenceAnalysisId: nullableStr(ctx.referenceAnalysisId ?? ctx.reference_analysis_id) ?? undefined,
+          workflow: str(ctx.workflow) === "creative_prompt" ? "creative_prompt" as const : undefined,
+          promptType: ["image", "video"].includes(str(ctx.promptType ?? ctx.prompt_type))
+            ? str(ctx.promptType ?? ctx.prompt_type) as "image" | "video"
+            : undefined,
+          creativeMode: ["chat", "prompt", "design"].includes(str(ctx.creativeMode ?? ctx.creative_mode))
+            ? str(ctx.creativeMode ?? ctx.creative_mode) as "chat" | "prompt" | "design"
+            : undefined,
+          personaId: nullableStr(ctx.personaId ?? ctx.persona_id) ?? undefined,
+          businessId: nullableStr(ctx.businessId ?? ctx.business_id) ?? undefined,
+        };
+      })(),
     },
     messages,
   };
@@ -767,18 +916,55 @@ export function mapConversationDetail(raw: Json): { conversation: Conversation; 
 /* Meta integration                                                           */
 /* -------------------------------------------------------------------------- */
 
+export function mapMetaAccountCampaignPage(raw: Json): MetaAccountCampaignPage {
+  const rawStatus = str(raw.status).toLowerCase();
+  const status = rawStatus === "ok" || rawStatus === "partial" ? rawStatus : "unavailable";
+  const campaigns = asArray(raw.campaigns).flatMap((row) => {
+    if (!isRecord(row)) return [];
+    const metaCampaignId = str(row.metaCampaignId ?? row.meta_campaign_id);
+    if (!metaCampaignId) return [];
+    return [{
+      metaCampaignId,
+      name: str(row.name),
+      objective: nullableStr(row.objective),
+      status: nullableStr(row.status),
+      effectiveStatus: nullableStr(row.effectiveStatus ?? row.effective_status),
+      createdTime: nullableStr(row.createdTime ?? row.created_time),
+      startTime: nullableStr(row.startTime ?? row.start_time),
+      stopTime: nullableStr(row.stopTime ?? row.stop_time),
+    }];
+  });
+  return {
+    status,
+    source: str(raw.source, "meta_marketing_api"),
+    unavailableReason: nullableStr(raw.unavailableReason ?? raw.unavailable_reason),
+    accountId: nullableStr(raw.accountId ?? raw.account_id),
+    campaigns,
+    hasMore: bool(raw.hasMore ?? raw.has_more),
+    nextCursor: nullableStr(raw.nextCursor ?? raw.next_cursor),
+    retrievedAt: nullableStr(raw.retrievedAt ?? raw.retrieved_at),
+  };
+}
+
 export function mapMetaStatus(raw: Json): MetaConnection {
   const connected = bool(raw.connected);
+  const campaignReady = bool(raw.campaignReady);
   const reason = (nullableStr(raw.unavailableReason) ?? undefined);
   return {
     status: connected ? "connected" : reason ? "error" : "not_connected",
+    campaignReady,
+    pageConfigured: bool(raw.pageConfigured),
     accountId: nullableStr(raw.adAccountId),
     accountName: nullableStr(raw.adAccountName),
     pageName: null,
     permissions: asArray(raw.scopes).map((s) => str(s)).filter(Boolean),
     connectedAt: raw.lastSyncedAt ? iso(raw.lastSyncedAt) : null,
     expiresAt: raw.tokenExpiresAt ? iso(raw.tokenExpiresAt) : null,
-    errorMessage: connected ? null : (reason ?? str(raw.message) ?? null),
+    // Keyed to campaignReady, not connected. An account can be fully connected
+    // and still be unable to publish because the Page ID is missing; gating on
+    // `connected` threw away the backend's precise diagnosis in exactly that
+    // case, leaving the wizard to show a generic "configure everything".
+    errorMessage: campaignReady ? null : (reason ?? nullableStr(raw.message) ?? null),
   };
 }
 
@@ -975,6 +1161,9 @@ export function mapConnector(raw: Json): Connector {
     hasOverride: bool(raw.hasOverride, false),
     configured: bool(raw.configured, false),
     provider: nullableStr(raw.provider),
+    // Server-provided provider choices; empty for a connector with no selector.
+    providers: asArray(raw.providers).map((value) => str(value)).filter(Boolean),
+    missingRequired: asArray(raw.missingRequired).map((value) => str(value)).filter(Boolean),
     placeholder: bool(raw.placeholder, false),
     fields: asArray(raw.fields).map(mapConnectorField),
     notes: str(raw.notes),
@@ -1026,6 +1215,103 @@ export function mapUsage(raw: Json): Usage {
     budgetSource: str(raw.budgetSource, "default"),
     byModel: asArray(raw.byModel).map(mapUsageBreakdown),
     byPersona: asArray(raw.byPersona).map(mapUsageBreakdown),
+    byAction: asArray(raw.byAction).map(mapUsageBreakdown),
+    estimatedCalls: num(raw.estimatedCalls, 0),
+    // Null (not 0) until a price is configured: an unpriced workspace must show
+    // tokens only rather than a made-up currency figure.
+    estimatedCostUsd: typeof raw.estimatedCostUsd === "number" ? raw.estimatedCostUsd : null,
+    costPerMillionInUsd: num(raw.costPerMillionInUsd, 0),
+    costPerMillionOutUsd: num(raw.costPerMillionOutUsd, 0),
+  };
+}
+
+/* Subscription & observability ---------------------------------------------- */
+
+const PLAN_IDS = ["free", "pro", "enterprise"] as const;
+
+/** Unknown plan ids fall back to `free` rather than throwing on a stale row. */
+function planId(v: unknown): PlanId {
+  const value = str(v, "free");
+  return (PLAN_IDS as readonly string[]).includes(value) ? (value as PlanId) : "free";
+}
+
+export function mapSubscriptionPlan(raw: Json): SubscriptionPlan {
+  return {
+    id: planId(raw.id),
+    name: str(raw.name, "—"),
+    description: str(raw.description),
+    dailyTokenBudget: num(raw.dailyTokenBudget, 0),
+    monthlyPriceUsd: num(raw.monthlyPriceUsd, 0),
+    isFree: bool(raw.isFree, true),
+    features: asArray(raw.features)
+      .map((feature) => str(feature))
+      .filter(Boolean),
+    supportedModels: asArray(raw.supportedModels)
+      .map((model) => str(model))
+      .filter(Boolean),
+    maxWorkspaces: num(raw.maxWorkspaces, 0),
+  };
+}
+
+export function mapWorkspaceSubscription(raw: Json): WorkspaceSubscription {
+  const plan = isRecord(raw.currentPlan) ? mapSubscriptionPlan(raw.currentPlan) : mapSubscriptionPlan({});
+  return {
+    workspaceId: str(raw.workspaceId, "ws_unknown"),
+    businessId: str(raw.businessId, ""),
+    businessName: str(raw.businessName, ""),
+    currentPlan: plan,
+    dailyTokenBudget: num(raw.dailyTokenBudget, plan.dailyTokenBudget),
+    tokensUsedToday: num(raw.tokensUsedToday, 0),
+    percentConsumed: num(raw.percentConsumed, 0),
+    isBudgetExceeded: bool(raw.isBudgetExceeded, false),
+    observabilityActive: bool(raw.observabilityActive, false),
+    observabilityDetails: isRecord(raw.observabilityDetails) ? raw.observabilityDetails : {},
+  };
+}
+
+export function mapSwitchPlanResponse(raw: Json): SwitchPlanResponse {
+  return {
+    success: bool(raw.success, false),
+    message: str(raw.message),
+    previousPlanId: planId(raw.previousPlanId),
+    newPlan: isRecord(raw.newPlan) ? mapSubscriptionPlan(raw.newPlan) : mapSubscriptionPlan({}),
+    updatedDailyBudget: num(raw.updatedDailyBudget, 0),
+  };
+}
+
+export function mapObservabilityStatus(raw: Json): ObservabilityStatus {
+  const local = isRecord(raw.localLogging) ? raw.localLogging : {};
+  const langsmith = isRecord(raw.langsmith) ? raw.langsmith : {};
+  const langfuse = isRecord(raw.langfuse) ? raw.langfuse : {};
+  const cost = isRecord(raw.costEstimator) ? raw.costEstimator : {};
+  return {
+    localLogging: {
+      status: str(local.status, "active"),
+      logDir: str(local.logDir, "logs"),
+      logLevel: str(local.logLevel, "info"),
+      format: str(local.format, "text"),
+      llmLog: str(local.llmLog),
+      agentLogs: str(local.agentLogs),
+      diagnosticLog: str(local.diagnosticLog),
+    },
+    langsmith: {
+      enabled: bool(langsmith.enabled, false),
+      project: str(langsmith.project, "sahm-ai"),
+      endpoint: str(langsmith.endpoint),
+    },
+    langfuse: {
+      enabled: bool(langfuse.enabled, false),
+      host: str(langfuse.host),
+      publicKeyConfigured: bool(langfuse.publicKeyConfigured, false),
+      publicKeyPreview: typeof langfuse.publicKeyPreview === "string" ? langfuse.publicKeyPreview : null,
+    },
+    costEstimator: {
+      status: str(cost.status, "active"),
+      supportedModelsCount: num(cost.supportedModelsCount, 0),
+      freeModels: asArray(cost.freeModels)
+        .map((model) => str(model))
+        .filter(Boolean),
+    },
   };
 }
 

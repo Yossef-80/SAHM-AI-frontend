@@ -71,6 +71,7 @@ export function SettingsView() {
                 ["/settings/llm", t("adminLlm"), t("adminLlmDesc")],
                 ["/settings/memory", t("adminMemory"), t("adminMemoryDesc")],
                 ["/settings/usage", t("adminUsage"), t("adminUsageDesc")],
+                ["/settings/plan", t("adminPlan"), t("adminPlanDesc")],
                 ["/settings/audit", t("adminAudit"), t("adminAuditDesc")],
               ] as const
             ).map(([href, title, description]) => (

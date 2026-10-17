@@ -2,13 +2,48 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { sortMessagesChronologically } from "@/lib/api/adapters";
 import { qk } from "@/lib/query-keys";
 import { useAssistantStore } from "@/store/assistant-store";
-import type { Message, SendMessageInput } from "@/types";
+import type { Conversation, Message, SendMessageInput, SendMessageOutput } from "@/types";
 import { useConversation } from "./use-api";
+
+/** The shape `useConversation` caches: `GET /assistant/conversations/{id}`. */
+type ConversationSnapshot = { conversation: Conversation; messages: Message[] };
+
+/**
+ * Merge one finished exchange into the conversation cache.
+ *
+ * Kept as a plain function so both the success and the error path can use it.
+ * Existing messages are preserved (a conversation is usually longer than this
+ * one turn), the finished pair replaces any optimistic copies by id, and the
+ * list is re-sorted so the rendering order matches the server's.
+ */
+function seedConversation(qc: QueryClient, conversationId: string, result: SendMessageOutput) {
+  const key = qk.conversation(conversationId);
+  const cached = qc.getQueryData<ConversationSnapshot>(key);
+
+  if (cached) {
+    const byId = new Map(cached.messages.map((m) => [m.id, m]));
+    byId.set(result.userMessage.id, result.userMessage);
+    byId.set(result.assistantMessage.id, result.assistantMessage);
+    qc.setQueryData<ConversationSnapshot>(key, {
+      conversation: result.conversation,
+      // `Array.from`, not spread: the project's `target` does not enable
+      // downlevel iteration, so spreading a Map iterator does not compile.
+      messages: sortMessagesChronologically(Array.from(byId.values())),
+    });
+    return;
+  }
+
+  qc.setQueryData<ConversationSnapshot>(key, {
+    conversation: result.conversation,
+    messages: sortMessagesChronologically([result.userMessage, result.assistantMessage]),
+  });
+}
+
 
 /**
  * Chat state for one conversation: cached messages + the in-flight exchange.
@@ -86,9 +121,17 @@ export function useChat(conversationId: string | null) {
               }
             : prev,
         );
+        // Seed the cache *before* the URL moves. The replace re-renders this view
+        // with the new conversation id, which subscribes a brand-new query key;
+        // if that key is empty the loading boundary paints a skeleton over the
+        // answer that just arrived. Writing the finished exchange here means the
+        // first render of the new key already has both messages.
+        if (convId && convId !== "new") seedConversation(qc, convId, finalResult);
         if (!input.conversationId && convId && convId !== "new") {
           router.replace(`/assistant/${convId}`);
         }
+        // Refetch in the background for the server's canonical ordering; the
+        // seeded data above is what the user sees while it lands.
         await qc.invalidateQueries({ queryKey: qk.conversation(convId ?? "new") });
         await qc.invalidateQueries({ queryKey: qk.conversations });
         setStream(null);

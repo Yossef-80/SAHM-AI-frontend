@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Sparkles } from "lucide-react";
+import { SahmIcon, SahmWordmark } from "@/components/brand";
 import { cn } from "@/lib/utils";
 import { primaryNav, secondaryNav, isActivePath, type NavItem } from "./nav-config";
 import { LanguageSwitcher } from "./language-switcher";
@@ -32,14 +32,14 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
 }
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const t = useTranslations("app");
   return (
     <div className="flex h-full flex-col">
-      <Link href="/" onClick={onNavigate} className="flex items-center gap-2 px-4 py-5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Sparkles className="h-4 w-4" />
+      <Link href="/" onClick={onNavigate} className="flex items-center gap-2.5 px-4 py-5">
+        <SahmIcon variant="gradient" className="h-8 w-8 shrink-0" aria-hidden />
+        <span className="flex flex-col leading-none">
+          <SahmWordmark className="text-base" />
+          <span className="mt-0.5 text-[10px] font-bold text-brand-pink">Marketing OS</span>
         </span>
-        <span className="text-sm font-semibold">{t("name")}</span>
       </Link>
       <PortfolioSwitcher />
       <nav className="flex-1 space-y-1 px-3" aria-label="Primary">

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChangeDiff, CreativeKind, CampaignDraft, GeneratedText } from "@/types";
+import type { ChangeDiff, CreativeKind, CampaignDraft, GeneratedText, TextTool } from "@/types";
 
 export type ConfirmRequest = {
   title: string;
@@ -36,6 +36,10 @@ interface UiState {
   generatedText: GeneratedText | null;
   setGeneratedText: (v: GeneratedText | null) => void;
 
+  /** Cross-route request to open the Layla text dialog with a prefilled brief. */
+  textRequest: { tool: TextTool; brief: string; campaignId?: string | null; creativeId?: string | null } | null;
+  setTextRequest: (v: UiState["textRequest"]) => void;
+
   /** Prefill for /campaigns/new coming from CREATE_CAMPAIGN action. */
   campaignPrefill: Partial<CampaignDraft> | null;
   setCampaignPrefill: (v: Partial<CampaignDraft> | null) => void;
@@ -64,6 +68,9 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   generatedText: null,
   setGeneratedText: (generatedText) => set({ generatedText }),
+
+  textRequest: null,
+  setTextRequest: (textRequest) => set({ textRequest }),
 
   campaignPrefill: null,
   setCampaignPrefill: (campaignPrefill) => set({ campaignPrefill }),

@@ -1,14 +1,19 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import type {
   AnalyzeReferenceInput,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
   AuditFilters,
   BrandIdentityUpdateRequest,
   BusinessProfileUpdateInput,
   CampaignDraft,
+  MetaAdPlanAssistInput,
+  MetaAdPlanSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
   GenerateCreativeInput,
@@ -19,11 +24,13 @@ import type {
   ListMemoryItemsInput,
   LoginInput,
   LlmSettingsUpdateInput,
+  PlanId,
   RegisterInput,
   UpdateContentItemInput,
   UpdateMemoryItemInput,
   Settings,
   UsagePeriod,
+  TargetingCategory,
 } from "@/types";
 
 /* Business */
@@ -57,14 +64,57 @@ export const useUpdateBrandIdentity = () => {
 /* Campaigns */
 export const useCampaigns = (input?: ListCampaignsInput) =>
   useQuery({ queryKey: qk.campaigns(input), queryFn: () => api.listCampaigns(input), staleTime: 60_000 });
+export const useMetaAccountCampaigns = (search?: string) =>
+  useInfiniteQuery({
+    queryKey: qk.metaAccountCampaigns(search),
+    queryFn: ({ pageParam }) =>
+      api.listMetaAccountCampaigns({ search, limit: 50, after: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.nextCursor ?? undefined : undefined,
+    staleTime: 60_000,
+  });
 export const useCampaign = (id: string) =>
   useQuery({ queryKey: qk.campaign(id), queryFn: () => api.getCampaign(id), enabled: !!id, staleTime: 60_000 });
 export const useCampaignPerformance = (id: string) =>
   useQuery({ queryKey: qk.campaignPerformance(id), queryFn: () => api.getCampaignPerformance(id), enabled: !!id });
+export const useCampaignAdInsights = (id: string) =>
+  useQuery({ queryKey: ["campaignAdInsights", id], queryFn: () => api.getCampaignAdInsights(id), enabled: !!id });
 export const useCampaignRecommendations = (id: string) =>
   useQuery({ queryKey: qk.campaignRecommendations(id), queryFn: () => api.getCampaignRecommendations(id), enabled: !!id });
 export const useAudience = (id: string | null) =>
-  useQuery({ queryKey: ["audience", id], queryFn: () => api.getAudience(id!), enabled: !!id });
+  useQuery({ queryKey: id ? qk.audience(id) : ["audience", "none"], queryFn: () => api.getAudience(id!), enabled: !!id });
+export const useAudiences = () =>
+  useQuery({ queryKey: qk.audiences, queryFn: () => api.listAudiences(), staleTime: 30_000 });
+export const useCreateAudience = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SavedAudienceInput) => api.createAudience(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.audiences }),
+  });
+};
+export const useUpdateAudience = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; patch: Partial<SavedAudienceInput> }) => api.updateAudience(input),
+    onSuccess: (audience) => {
+      qc.setQueryData(qk.audience(audience.id), audience);
+      qc.invalidateQueries({ queryKey: qk.audiences });
+    },
+  });
+};
+export const useArchiveAudience = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.archiveAudience(id),
+    onSuccess: (audience) => {
+      qc.setQueryData(qk.audience(audience.id), audience);
+      qc.invalidateQueries({ queryKey: qk.audiences });
+    },
+  });
+};
+export const useSuggestAudiences = () =>
+  useMutation({ mutationFn: (input: AudienceSuggestionInput) => api.suggestAudiences(input) });
 export const useCampaignLearnings = (id: string) =>
   useQuery({ queryKey: qk.campaignLearnings(id), queryFn: () => api.getCampaignLearnings(id), enabled: !!id });
 
@@ -75,12 +125,54 @@ export const useCreateCampaign = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
   });
 };
+export const usePrepareMetaAdPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ draft, plan }: { draft: CampaignDraft; plan: MetaAdPlanSettings }) =>
+      api.prepareMetaAdPlan(draft, plan),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
+  });
+};
+export const useAssistMetaAdPlan = () =>
+  useMutation({ mutationFn: (input: MetaAdPlanAssistInput) => api.assistMetaAdPlan(input) });
+export const useActivateMetaAdPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { recommendationId: string; confirm: boolean }) =>
+      api.activateMetaAdPlan(input.recommendationId, input.confirm),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaignAdInsights"] });
+    },
+  });
+};
+export const usePreviewMetaAdPlan = () =>
+  useMutation({ mutationFn: (recommendationId: string) => api.previewMetaAdPlan(recommendationId) });
+export const useConfirmMetaAdPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (recommendationId: string) => api.confirmMetaAdPlan(recommendationId),
+    onSuccess: (_result, recommendationId) => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaignAdInsights"] });
+      qc.invalidateQueries({ queryKey: ["recommendations", recommendationId] });
+    },
+  });
+};
 export const useGenerateStrategy = () =>
   useMutation({ mutationFn: (input: GenerateStrategyInput) => api.generateStrategy(input) });
 
 /* Creatives */
 export const useCreatives = (campaignId?: string) =>
   useQuery({ queryKey: qk.creatives(campaignId), queryFn: () => api.listCreatives(campaignId), staleTime: 60_000 });
+export const useUploadCreative = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { file: File; campaignId?: string; note?: string }) =>
+      api.uploadCreative(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["creatives"] }),
+  });
+};
 export const useGenerateCreative = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -88,8 +180,39 @@ export const useGenerateCreative = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["creatives"] }),
   });
 };
-export const useAnalyzeReference = () =>
-  useMutation({ mutationFn: (input: AnalyzeReferenceInput) => api.analyzeReference(input) });
+export const useCreativeReferences = () =>
+  useQuery({ queryKey: qk.creativeReferences, queryFn: () => api.listCreativeReferences() });
+export const useUpdateCreativeReference = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; favorite: boolean }) => api.updateCreativeReference(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.creativeReferences }),
+  });
+};
+/**
+ * Uploads an image for the next chat message.
+ *
+ * Separate from `useAnalyzeReference` on purpose: attaching a picture to a chat
+ * must not run the vision analysis, change the composer mode, or navigate. The
+ * returned id is added as a turn-scoped `attachment` chip.
+ */
+export const useUploadChatAttachment = () =>
+  useMutation({
+    mutationFn: (input: { source: string; fileName?: string; mime?: string }) =>
+      api.uploadChatAttachment(input),
+  });
+
+export const useAnalyzeReference = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AnalyzeReferenceInput) => api.analyzeReference(input),
+    onSuccess: (result) => {
+      if (result.status !== "unavailable" && result.id !== "ref_unknown") {
+        qc.invalidateQueries({ queryKey: qk.creativeReferences });
+      }
+    },
+  });
+};
 
 /* Insights */
 export const useInsights = (input?: ListInsightsInput) =>
@@ -121,6 +244,31 @@ export const useTask = (id: string, enabled = true) =>
   });
 
 /* Integrations */
+/**
+ * Category-aware lookup against Meta Targeting Search. Wait for typing to pause
+ * so every prefix does not trigger a rate-limited Graph request.
+ */
+export const useMetaInterestSearch = (query: string, category: TargetingCategory) => {
+  const normalized = query.trim();
+  const [debouncedQuery, setDebouncedQuery] = useState(normalized);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(normalized), 450);
+    return () => clearTimeout(timer);
+  }, [normalized]);
+
+  const result = useQuery({
+    queryKey: qk.metaInterestSearch(category, debouncedQuery.toLowerCase()),
+    queryFn: () => api.searchMetaInterests(debouncedQuery, category),
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 5 * 60_000,
+    // An unavailable Meta lookup is already converted into an empty result by
+    // the backend; don't let React Query amplify a transient HTTP error.
+    retry: false,
+  });
+  return { ...result, isDebouncing: normalized !== debouncedQuery };
+};
+
 export const useMetaConnection = () =>
   useQuery({
     queryKey: qk.meta,
@@ -223,6 +371,23 @@ export const useUpdateBusinessProfile = () => {
 export const useConnectorSettings = () =>
   useQuery({ queryKey: qk.connectors, queryFn: () => api.getConnectorSettings() });
 
+/**
+ * Whether image generation can actually run.
+ *
+ * The backend already answers this: `ConnectorOut.configured` is false for a
+ * placeholder provider (`mock`), and `placeholder` says so explicitly. Without
+ * this the Create buttons looked live and the request came back 200 with zero
+ * assets, which the UI reported as a success.
+ */
+export const useImageGenerationReady = () => {
+  const query = useConnectorSettings();
+  const image = query.data?.connectors.find((c) => c.connector === "image");
+  return {
+    isLoading: query.isLoading,
+    ready: Boolean(image?.configured && !image?.placeholder),
+  };
+};
+
 export const useUpdateConnector = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -300,6 +465,40 @@ export const useReindexMemory = () => {
 
 export const useUsage = (period: UsagePeriod = "today") =>
   useQuery({ queryKey: qk.usage(period), queryFn: () => api.getUsage(period) });
+
+/* ------------------------------------------------ subscriptions & observability */
+
+export const useSubscription = () =>
+  useQuery({ queryKey: qk.subscription, queryFn: () => api.getSubscription() });
+
+/** The catalog changes only with a deploy, so it is cached for the session. */
+export const useSubscriptionPlans = () =>
+  useQuery({
+    queryKey: qk.subscriptionPlans,
+    queryFn: () => api.getSubscriptionPlans(),
+    staleTime: Infinity,
+  });
+
+export const useObservability = () =>
+  useQuery({ queryKey: qk.observability, queryFn: () => api.getObservabilityStatus() });
+
+/**
+ * Switching a plan moves the workspace's daily token ceiling, so every number
+ * derived from it — the meter, the usage page, the plan badge — is stale
+ * afterwards. Invalidate the whole `subscription` prefix plus `usage`.
+ */
+export const useSwitchPlan = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: PlanId) => api.switchPlan(planId),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: qk.subscription }),
+        qc.invalidateQueries({ queryKey: ["usage"] }),
+      ]);
+    },
+  });
+};
 
 export const useAudit = (filters?: AuditFilters) =>
   useQuery({

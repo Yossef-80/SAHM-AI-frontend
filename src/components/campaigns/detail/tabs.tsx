@@ -10,9 +10,9 @@ import { ActionButton } from "@/components/shared/action-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { CreativeCard } from "@/components/creatives/creative-card";
 import { HealthDot } from "@/components/campaigns/health-dot";
-import { useAudience, useCampaignLearnings, useCampaignPerformance, useCampaignRecommendations, useCreatives, useDismissRecommendation } from "@/hooks/use-api";
+import { useAudience, useCampaignAdInsights, useCampaignLearnings, useCampaignPerformance, useCampaignRecommendations, useCreatives, useDismissRecommendation } from "@/hooks/use-api";
 import { formatCurrency, formatDate, formatNumber, formatPercent } from "@/lib/format";
-import type { Campaign, CampaignMetrics } from "@/types";
+import type { Campaign, CampaignMetrics, MetaAdInsight } from "@/types";
 import { StrategyView } from "./strategy-view";
 
 /* ---------------- Overview ---------------- */
@@ -87,9 +87,28 @@ export function StrategyTab({ campaign: c }: { campaign: Campaign }) {
 export function AudienceTab({ campaign: c }: { campaign: Campaign }) {
   const t = useTranslations("campaigns.audience");
   const locale = useLocale();
-  const q = useAudience(c.audienceId);
+  // Prefer the creation-time snapshot so later library edits never rewrite campaign history.
+  const snapshot = c.audienceSnapshot
+    ? {
+        id: c.audienceSnapshot.id,
+        name: c.audienceSnapshot.name,
+        description: c.audienceSnapshot.description,
+        estimatedReach: c.audienceSnapshot.estimatedReach,
+        ...c.audienceSnapshot.targeting,
+      }
+    : null;
+  const q = useAudience(snapshot ? null : c.audienceId);
+  const audience = snapshot ?? (c.audienceId ? q.data ?? null : null);
   return (
-    <AsyncBoundary isLoading={q.isLoading} isError={q.isError} error={q.error} data={c.audienceId ? q.data : null} onRetry={() => q.refetch()} emptyTitle={t("empty")}>
+    <AsyncBoundary
+      isLoading={!snapshot && Boolean(c.audienceId) && q.isLoading}
+      isPending={!snapshot && Boolean(c.audienceId) && q.isPending}
+      isError={!snapshot && q.isError}
+      error={snapshot ? undefined : q.error}
+      data={audience}
+      onRetry={() => q.refetch()}
+      emptyTitle={t("empty")}
+    >
       {(a) => (
         <Card>
           <CardHeader>
@@ -165,56 +184,174 @@ export function CreativesTab({ campaign: c }: { campaign: Campaign }) {
 
 /* ---------------- Performance ---------------- */
 
-export function PerformanceTab({ campaign: c }: { campaign: Campaign }) {
+/* ---------------- Campaign daily trend ---------------- */
+
+/**
+ * Campaign-level daily performance from GET /campaigns/{id}/insights.
+ *
+ * A failure here must never take the whole Performance tab down with it: the
+ * per-ad table below is a separate query and still worth showing, so errors
+ * render nothing rather than propagating.
+ */
+function CampaignTrend({ campaign: c }: { campaign: Campaign }) {
   const t = useTranslations("campaigns.performance");
   const tm = useTranslations("metrics");
   const locale = useLocale();
   const q = useCampaignPerformance(c.id);
+
+  if (q.isLoading) return <CardGridSkeleton />;
+  if (q.isError) return null;
+
+  const rows = q.data ?? [];
+  const totals = rows.reduce(
+    (acc, r) => ({
+      impressions: acc.impressions + r.impressions,
+      clicks: acc.clicks + r.clicks,
+      spend: acc.spend + r.spend,
+      conversions: acc.conversions + r.conversions,
+    }),
+    { impressions: 0, clicks: 0, spend: 0, conversions: 0 },
+  );
+  // Never divide by zero; a flat zero-spend series still renders as a baseline.
+  const peak = Math.max(1, ...rows.map((r) => r.spend));
+
+  const cards: Array<{ key: "impressions" | "clicks" | "spend" | "conversions"; money: boolean }> = [
+    { key: "impressions", money: false },
+    { key: "clicks", money: false },
+    { key: "spend", money: true },
+    { key: "conversions", money: false },
+  ];
+
   return (
-    <AsyncBoundary {...q} onRetry={() => q.refetch()} emptyTitle={t("empty")} emptyDescription={t("emptyDesc")}>
-      {(points) => {
-        const max = Math.max(...points.map((p) => p.clicks), 1);
-        return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t("last14")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Lightweight inline bar chart — no chart lib in scope for this pass */}
-              <div className="flex h-32 items-end gap-1" role="img" aria-label={tm("clicks")}>
-                {points.map((p) => (
-                  <div key={p.date} className="flex-1 rounded-t bg-primary/70" style={{ height: `${(p.clicks / max) * 100}%` }} title={`${p.date}: ${p.clicks}`} />
-                ))}
-              </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t("trendTitle")}</CardTitle>
+        {rows.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t("trendRange", {
+              start: rows[0].date,
+              end: rows[rows.length - 1].date,
+              days: rows.length,
+            })}
+          </p>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("trendEmpty")}</p>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-4">
+              {cards.map((m) => (
+                <div key={m.key} className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">{tm(m.key)}</p>
+                  <p className="text-lg font-semibold tabular-nums">
+                    {m.money
+                      ? formatCurrency(totals[m.key], c.currency, locale)
+                      : formatNumber(totals[m.key], locale)}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex h-32 items-end gap-1" role="img" aria-label={t("trendTitle")}>
+              {rows.map((r) => (
+                <div
+                  key={r.date}
+                  className="brand-gradient flex-1 rounded-t-sm"
+                  style={{ height: `${Math.max(2, (r.spend / peak) * 100)}%` }}
+                  title={`${r.date} — ${formatCurrency(r.spend, c.currency, locale)}`}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>{rows[0].date}</span>
+              <span>{t("trendMetric")}</span>
+              <span>{rows[rows.length - 1].date}</span>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function PerformanceTab({ campaign: c }: { campaign: Campaign }) {
+  const t = useTranslations("campaigns.performance");
+  const tm = useTranslations("metrics");
+  const locale = useLocale();
+  const q = useCampaignAdInsights(c.id);
+  return (
+    <div className="space-y-4">
+      <CampaignTrend campaign={c} />
+      <AsyncBoundary {...q} onRetry={() => q.refetch()} emptyTitle={t("empty")} emptyDescription={t("emptyDesc")}>
+      {(data) => (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("adLevelTitle")}</CardTitle>
+            <p className="text-xs text-muted-foreground">{data.dateStart} – {data.dateEnd}</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {data.status !== "ok" && data.reason && (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{data.reason}</p>
+            )}
+            {data.ads.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("noAdRows")}</p>
+            ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{t("date")}</TableHead>
+                      <TableHead>{t("creative")}</TableHead>
+                      <TableHead>{t("metaAdId")}</TableHead>
                       <TableHead className="text-end">{tm("impressions")}</TableHead>
                       <TableHead className="text-end">{tm("clicks")}</TableHead>
-                      <TableHead className="text-end">{tm("conversions")}</TableHead>
+                      <TableHead className="text-end">CTR</TableHead>
                       <TableHead className="text-end">{tm("spend")}</TableHead>
+                      <TableHead>{t("prompt")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...points].reverse().map((p) => (
-                      <TableRow key={p.date}>
-                        <TableCell>{p.date}</TableCell>
-                        <TableCell className="text-end tabular-nums">{formatNumber(p.impressions, locale)}</TableCell>
-                        <TableCell className="text-end tabular-nums">{formatNumber(p.clicks, locale)}</TableCell>
-                        <TableCell className="text-end tabular-nums">{p.conversions}</TableCell>
-                        <TableCell className="text-end tabular-nums">{formatCurrency(p.spend, c.currency, locale)}</TableCell>
+                    {data.ads.map((ad: MetaAdInsight) => (
+                      <TableRow key={`${ad.metaAdId}:${ad.dateStart}:${ad.dateEnd}`}>
+                        <TableCell>
+                          {ad.mapped && ad.imageUrl ? (
+                            <img src={ad.imageUrl} alt={ad.metaAdName || t("creative")} className="h-16 w-16 rounded object-cover" loading="lazy" />
+                          ) : (
+                            <Badge variant="outline">{t("unmapped")}</Badge>
+                          )}
+                          {ad.mapped && ad.creativeId && <p className="mt-1 text-xs text-muted-foreground">{ad.creativeId}</p>}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{ad.metaAdId}<br />{ad.metaAdName}</TableCell>
+                        <TableCell className="text-end tabular-nums">{formatNumber(ad.metrics.impressions ?? 0, locale)}</TableCell>
+                        <TableCell className="text-end tabular-nums">{formatNumber(ad.metrics.clicks ?? 0, locale)}</TableCell>
+                        <TableCell className="text-end tabular-nums">{ad.metrics.ctr === undefined ? "—" : formatPercent(ad.metrics.ctr, locale, 2)}</TableCell>
+                        <TableCell className="text-end tabular-nums">{ad.metrics.spend === undefined ? "—" : formatCurrency(ad.metrics.spend, c.currency, locale)}</TableCell>
+                        <TableCell className="max-w-xs">
+                          {ad.mapped && ad.prompt ? (
+                            <details>
+                              <summary className="cursor-pointer text-sm">{t("viewPrompt")}</summary>
+                              <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{ad.prompt}</p>
+                            </details>
+                          ) : <span className="text-xs text-muted-foreground">{t("noExactMatch")}</span>}
+                          {ad.actions.length > 0 && (
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-xs">{t("metaActions")}</summary>
+                              <pre className="mt-1 max-h-36 overflow-auto whitespace-pre-wrap text-xs" dir="ltr">{JSON.stringify(ad.actions, null, 2)}</pre>
+                            </details>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-            </CardContent>
-          </Card>
-        );
-      }}
-    </AsyncBoundary>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      </AsyncBoundary>
+    </div>
   );
 }
 

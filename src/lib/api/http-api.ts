@@ -20,15 +20,21 @@ import {
   mapConversationDetail,
   mapConversationSummary,
   mapCreative,
+  mapCreativeReference,
   mapInsight,
   mapMemoryItem,
   mapMemoryItemList,
   mapMessage,
+  mapMetaAccountCampaignPage,
   mapMetaStatus,
   mapPersona,
   mapRecommendation,
+  mapObservabilityStatus,
   mapReferenceAnalysis,
   mapSessionInfo,
+  mapSubscriptionPlan,
+  mapSwitchPlanResponse,
+  mapWorkspaceSubscription,
   mapUsage,
   normalizeErrorBody,
   str,
@@ -39,6 +45,11 @@ import {
 import {
   AgentSchema,
   AgentTaskSchema,
+  AudienceSchema,
+  SavedAudienceSchema,
+  SavedAudienceListSchema,
+  SavedAudienceInputSchema,
+  AudienceSuggestionResponseSchema,
   AuditListSchema,
   AuthSessionSchema,
   BrandProfileSchema,
@@ -46,13 +57,18 @@ import {
   BusinessProfileFormSchema,
   BusinessSchema,
   CampaignSchema,
-  CampaignStrategySchema,
   ConnectorDeleteResultSchema,
   ConnectorSchema,
   ConnectorSettingsSchema,
   ContentItemSchema,
+  GenerateContentCalendarInputSchema,
+  UpdateContentItemInputSchema,
+  ChatAttachmentSchema,
   ConversationSchema,
   CreativeSchema,
+  CreativeReferenceSchema,
+  GeneratedTextSchema,
+  GeneratedCampaignStrategySchema,
   InsightSchema,
   LlmSettingsSchema,
   MemoryItemListSchema,
@@ -60,48 +76,83 @@ import {
   MemoryReindexResultSchema,
   MessageSchema,
   MetaConnectionSchema,
+  MetaAccountCampaignPageSchema,
+  MetaTargetingSearchSchema,
+  MetaAdPlanCreatedSchema,
+  MetaAdPlanAssistInputSchema,
+  MetaAdPlanAssistResponseSchema,
+  MetaAdPlanApprovalResponseSchema,
+  MetaAdInsightsResponseSchema,
+  MetaAdPlanActivationResponseSchema,
+  MetricPointSchema,
   RecommendationSchema,
   ReferenceAnalysisSchema,
   SessionInfoSchema,
   SettingsSchema,
+  ObservabilityStatusSchema,
+  SubscriptionPlanSchema,
+  SwitchPlanResponseSchema,
   UsageSchema,
+  WorkspaceSubscriptionSchema,
 } from "@/types";
 import type {
   AnalyzeReferenceInput,
   ApplyRecommendationInput,
+  Audience,
+  SavedAudience,
+  SavedAudienceInput,
+  AudienceSuggestionInput,
+  AudienceSuggestionResponse,
+  ChatAttachmentUpload,
   AssistantProgressEvent,
   AuditFilters,
   AuthSession,
   BrandIdentityResponse,
   BrandIdentityUpdateRequest,
   BusinessProfileUpdateInput,
+  Campaign,
   CampaignDraft,
-  CampaignStrategy,
   ConnectorSettings,
   ConnectorUpdateInput,
   CreateMemoryItemInput,
   GenerateContentCalendarInput,
   GenerateCreativeInput,
   GenerateStrategyInput,
+  GenerateTextInput,
+  GeneratedCampaignStrategy,
+  MetaAdPlanAssistInput,
+  MetaAdPlanAssistResponse,
+  GeneratedText,
   ListCampaignsInput,
+  ListMetaAccountCampaignsInput,
   ListContentInput,
   ListInsightsInput,
   ListMemoryItemsInput,
   LoginInput,
+  MetaAdPlanActivationResponse,
+  MetaAdPlanSettings,
+  TargetingCategory,
   LlmSettings,
   LlmSettingsUpdateInput,
   LogoutResult,
+  MetricPoint,
   RegisterInput,
   SendMessageInput,
   SendMessageOutput,
+  ObservabilityStatus,
+  PlanId,
   SessionInfo,
   Settings,
+  SubscriptionPlan,
+  SwitchPlanResponse,
   StartTaskInput,
   UpdateAgentInput,
+  UpdateCampaignInput,
   UpdateContentItemInput,
   UpdateMemoryItemInput,
   Usage,
   UsagePeriod,
+  WorkspaceSubscription,
 } from "@/types";
 import {
   endSession,
@@ -111,7 +162,10 @@ import {
 } from "@/store/auth-store";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const CAMPAIGN_STRATEGY_TIMEOUT_MS = 120_000;
+const AUDIENCE_SUGGESTION_TIMEOUT_MS = 120_000;
 const ASSISTANT_TIMEOUT_MS = 210_000;
+const REFERENCE_ANALYSIS_TIMEOUT_MS = 210_000;
 
 /** Supabase access tokens are JWTs; legacy backend sessions are opaque strings. */
 function isSupabaseJwt(token: string | null): boolean {
@@ -132,6 +186,240 @@ function unsupported(feature: string, hint: string): ApiError {
   return new ApiError("NOT_IMPLEMENTED", `"${feature}" is not available on this backend yet. ${hint}`, 501);
 }
 
+const LAYLA_TEXT_TITLES = {
+  en: {
+    generate_creative_brief: "Creative brief",
+    generate_commercial_script: "Commercial script",
+    generate_image_prompt: "Image-generation prompt",
+    generate_video_prompt: "Video-generation prompt",
+    generate_ad_copy: "Ad copy",
+    generate_ad_variations: "Ad variations",
+  },
+  ar: {
+    generate_creative_brief: "موجز إبداعي",
+    generate_commercial_script: "سيناريو إعلاني",
+    generate_image_prompt: "برومبت لتوليد صورة",
+    generate_video_prompt: "برومبت لتوليد فيديو",
+    generate_ad_copy: "نص إعلاني",
+    generate_ad_variations: "نسخ إعلانية متنوعة",
+  },
+} satisfies Record<GenerateTextInput["language"], Record<GenerateTextInput["tool"], string>>;
+
+function generatedTextSections(
+  tool: GenerateTextInput["tool"],
+  output: Json,
+  language: GenerateTextInput["language"],
+): GeneratedText["sections"] {
+  const ar = language === "ar";
+  const labels = ar
+    ? {
+        concept: "الفكرة",
+        headline: "العنوان الرئيسي",
+        subheadline: "العنوان الفرعي",
+        visualDirection: "التوجيه البصري",
+        styleSpec: "مواصفات الأسلوب",
+        ctas: "دعوات الإجراء",
+        variations: "الزوايا المقترحة",
+        hook: "الافتتاحية",
+        scenes: "المشاهد",
+        scene: "مشهد",
+        timecode: "التوقيت",
+        visual: "الصورة",
+        camera: "حركة الكاميرا",
+        voiceover: "التعليق الصوتي",
+        onScreenText: "النص على الشاشة",
+        cta: "دعوة الإجراء",
+        duration: "المدة",
+        prompt: "البرومبت الرئيسي",
+        negativePrompt: "ما يجب تجنبه",
+        aspectRatio: "نسبة الأبعاد",
+        referenceNotes: "ملاحظات المرجع",
+        shots: "اللقطات",
+        music: "اتجاه الموسيقى",
+        primaryTexts: "النصوص الأساسية",
+        headlines: "العناوين",
+        descriptions: "الأوصاف",
+        angle: "الزاوية",
+        styleNotes: "ملاحظات بصرية",
+        basedOn: "مبني على",
+        notes: "ملاحظات Layla",
+        summary: "الملخص",
+        unavailable: "مصادر غير متاحة",
+        output: "الناتج",
+      }
+    : {
+        concept: "Concept",
+        headline: "Headline",
+        subheadline: "Subheadline",
+        visualDirection: "Visual direction",
+        styleSpec: "Structured style spec",
+        ctas: "Calls to action",
+        variations: "Suggested angles",
+        hook: "Hook",
+        scenes: "Scenes",
+        scene: "Scene",
+        timecode: "Timecode",
+        visual: "Visual",
+        camera: "Camera",
+        voiceover: "Voiceover",
+        onScreenText: "On-screen text",
+        cta: "Call to action",
+        duration: "Duration",
+        prompt: "Master prompt",
+        negativePrompt: "Negative prompt",
+        aspectRatio: "Aspect ratio",
+        referenceNotes: "Reference notes",
+        shots: "Shots",
+        music: "Music direction",
+        primaryTexts: "Primary text options",
+        headlines: "Headlines",
+        descriptions: "Descriptions",
+        angle: "Angle",
+        styleNotes: "Visual notes",
+        basedOn: "Based on",
+        notes: "Layla's notes",
+        summary: "Summary",
+        unavailable: "Unavailable sources",
+        output: "Output",
+      };
+
+  const sections: GeneratedText["sections"] = [];
+  const valueText = (value: unknown): string => {
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    if (Array.isArray(value)) return value.map(valueText).filter(Boolean).join("\n");
+    if (isRecord(value)) {
+      return Object.entries(value)
+        .filter(([, field]) => field !== null && field !== undefined && field !== "")
+        .map(([key, field]) => `${key.replace(/_/g, " ")}: ${valueText(field)}`)
+        .filter(Boolean)
+        .join("\n");
+    }
+    return "";
+  };
+  const add = (heading: string, value: unknown) => {
+    const body = valueText(value);
+    if (body) sections.push({ heading, body });
+  };
+  const listText = (value: unknown) =>
+    asArray(value)
+      .map((item, index) => {
+        const body = valueText(item);
+        return body ? `${index + 1}. ${body}` : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+  switch (tool) {
+    case "generate_creative_brief":
+      add(labels.concept, output.concept);
+      add(labels.headline, output.headline);
+      add(labels.subheadline, output.subheadline);
+      add(labels.visualDirection, output.visual_direction ?? output.visualDirection);
+      add(labels.styleSpec, output.style_spec ?? output.styleSpec);
+      add(labels.ctas, listText(output.ctas));
+      add(labels.variations, listText(output.variations));
+      break;
+    case "generate_commercial_script": {
+      add(labels.hook, output.hook);
+      const scenes = asArray(output.scenes)
+        .map((scene, index) => {
+          if (!isRecord(scene)) return "";
+          const order = typeof scene.order === "number" ? scene.order : index + 1;
+          const seconds = valueText(scene.duration_seconds ?? scene.durationSeconds);
+          const title = `${labels.scene} ${order}${seconds ? ` (${seconds}s)` : ""}`;
+          const details = [
+            valueText(scene.timecode) ? `${labels.timecode}: ${valueText(scene.timecode)}` : "",
+            valueText(scene.visual) ? `${labels.visual}: ${valueText(scene.visual)}` : "",
+            valueText(scene.camera) ? `${labels.camera}: ${valueText(scene.camera)}` : "",
+            valueText(scene.voiceover) ? `${labels.voiceover}: ${valueText(scene.voiceover)}` : "",
+            valueText(scene.on_screen_text ?? scene.onScreenText)
+              ? `${labels.onScreenText}: ${valueText(scene.on_screen_text ?? scene.onScreenText)}`
+              : "",
+          ].filter(Boolean);
+          return [title, ...details].join("\n");
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      add(labels.scenes, scenes);
+      add(labels.voiceover, output.voiceover);
+      add(labels.cta, output.cta);
+      if (output.duration_seconds !== undefined) add(labels.duration, output.duration_seconds);
+      break;
+    }
+    case "generate_image_prompt":
+      add(labels.prompt, output.prompt);
+      add(labels.negativePrompt, output.negative_prompt ?? output.negativePrompt);
+      add(labels.styleSpec, output.style_spec ?? output.styleSpec);
+      add(labels.aspectRatio, output.aspect_ratio ?? output.aspectRatio);
+      add(labels.referenceNotes, output.reference_notes ?? output.referenceNotes);
+      break;
+    case "generate_video_prompt": {
+      add(labels.prompt, output.prompt);
+      const shots = asArray(output.shots)
+        .map((shot, index) => {
+          if (!isRecord(shot)) return "";
+          const order = typeof shot.order === "number" ? shot.order : index + 1;
+          const seconds = valueText(shot.duration_seconds ?? shot.durationSeconds);
+          const title = `${labels.scene} ${order}${seconds ? ` (${seconds}s)` : ""}`;
+          const details = [
+            valueText(shot.timecode) ? `${labels.timecode}: ${valueText(shot.timecode)}` : "",
+            valueText(shot.description) ? `${labels.visual}: ${valueText(shot.description)}` : "",
+            valueText(shot.camera) ? `${labels.camera}: ${valueText(shot.camera)}` : "",
+            valueText(shot.voiceover) ? `${labels.voiceover}: ${valueText(shot.voiceover)}` : "",
+            valueText(shot.on_screen_text ?? shot.onScreenText)
+              ? `${labels.onScreenText}: ${valueText(shot.on_screen_text ?? shot.onScreenText)}`
+              : "",
+          ].filter(Boolean);
+          return [title, ...details].join("\n");
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      add(labels.shots, shots);
+      add(labels.voiceover, output.voiceover);
+      add(labels.music, output.music_direction ?? output.musicDirection);
+      if (output.duration_seconds !== undefined) add(labels.duration, output.duration_seconds);
+      add(labels.aspectRatio, output.aspect_ratio ?? output.aspectRatio);
+      break;
+    }
+    case "generate_ad_copy":
+      add(labels.primaryTexts, listText(output.primary_texts ?? output.primaryTexts));
+      add(labels.headlines, listText(output.headlines));
+      add(labels.descriptions, listText(output.descriptions));
+      add(labels.ctas, listText(output.ctas));
+      break;
+    case "generate_ad_variations": {
+      const variations = asArray(output.variations)
+        .map((variation, index) => {
+          if (!isRecord(variation)) return "";
+          const parts = [
+            `${index + 1}. ${valueText(variation.angle)}`,
+            valueText(variation.headline) ? `${labels.headline}: ${valueText(variation.headline)}` : "",
+            valueText(variation.primary_text ?? variation.primaryText)
+              ? `${labels.primaryTexts}: ${valueText(variation.primary_text ?? variation.primaryText)}`
+              : "",
+            valueText(variation.cta) ? `${labels.cta}: ${valueText(variation.cta)}` : "",
+            valueText(variation.style_notes ?? variation.styleNotes)
+              ? `${labels.styleNotes}: ${valueText(variation.style_notes ?? variation.styleNotes)}`
+              : "",
+          ].filter(Boolean);
+          return parts.join("\n");
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      add(labels.variations, variations);
+      add(labels.basedOn, output.based_on ?? output.basedOn);
+      break;
+    }
+  }
+
+  add(labels.summary, output.summary);
+  add(labels.notes, output.notes);
+  add(labels.unavailable, listText(output.unavailable_sources ?? output.unavailableSources));
+  if (!sections.length) add(labels.output, "Layla returned no structured text for this request.");
+  return sections;
+}
+
 type RawInit = RequestInit & { query?: Record<string, unknown>; timeoutMs?: number };
 
 /**
@@ -144,9 +432,6 @@ type RawInit = RequestInit & { query?: Record<string, unknown>; timeoutMs?: numb
  */
 export class HttpApi implements MarketingApi {
   constructor(private base = process.env.NEXT_PUBLIC_API_BASE ?? "/api") {}
-
-  /** Request id echoed by the backend on the last response; correlated on the next request. */
-  private lastRequestId: string | null = null;
 
   /** Single in-flight refresh, so N parallel 401s cause exactly one `/auth/refresh`. */
   private refreshInFlight: Promise<AuthSession | null> | null = null;
@@ -164,16 +449,17 @@ export class HttpApi implements MarketingApi {
       useAuthStore.getState().hydrate();
     }
     const hasBody = init.body !== undefined && init.body !== null;
+    // FormData must set its own Content-Type: the browser embeds the multipart
+    // boundary in it, and any value chosen here would break the upload.
+    const isMultipart = typeof FormData !== "undefined" && init.body instanceof FormData;
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (hasBody) headers["Content-Type"] = "application/json";
+    if (hasBody && !isMultipart) headers["Content-Type"] = "application/json";
 
     const token = getAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const workspaceId = getActiveWorkspaceId();
     if (workspaceId) headers["X-Workspace-Id"] = workspaceId;
-
-    if (this.lastRequestId) headers["X-Request-Id"] = this.lastRequestId;
 
     // Explicit per-call headers win, but a caller cannot silently drop the token
     // by passing `Authorization: undefined` — `delete` is the only escape hatch
@@ -251,15 +537,29 @@ export class HttpApi implements MarketingApi {
         signal: init.signal ?? timeoutSignal(timeoutMs ?? DEFAULT_TIMEOUT_MS),
       });
     } catch (error) {
+      const cause = error instanceof Error ? error.message : String(error);
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new ApiError(
+          "request_timeout",
+          `The request to ${url} timed out after ${timeoutMs ?? DEFAULT_TIMEOUT_MS}ms. The backend may still be processing it.`,
+          408,
+          { cause, url, timeoutMs: timeoutMs ?? DEFAULT_TIMEOUT_MS },
+        );
+      }
+      // `fetch` rejects only when no readable HTTP response arrives at all: the
+      // server is down or restarting, the URL/port is wrong, or the browser
+      // blocked the response (CORS). It is *not* proof that the backend is
+      // stopped -- a 500 sent without CORS headers lands here too -- so the
+      // wording stays honest about what is actually known.
       throw new ApiError(
         "network_error",
-        `Could not reach the backend at ${url}. Check that it is running and that the browser can access it.`,
+        `No HTTP response from ${url}. The server may be stopped or restarting, unreachable from this browser, or its response was blocked (CORS). Check the backend log for a request id, then try again.`,
         0,
-        { cause: error instanceof Error ? error.message : String(error) },
+        { cause, url },
       );
     }
-    const requestId = res.headers.get("x-request-id");
-    if (requestId) this.lastRequestId = requestId;
+    // The backend creates a fresh request id when the client does not supply
+    // one. Do not recycle the previous response's id across unrelated calls.
     return res;
   }
 
@@ -286,6 +586,19 @@ export class HttpApi implements MarketingApi {
     if (res.status === 401) {
       // Surface the backend's own generic message verbatim on the login screen.
       return new ApiError(code || "unauthorized", message || "Unauthorized", 401, details);
+    }
+    if (res.status >= 500) {
+      // The backend answers an unhandled failure with `internal_error` and a
+      // request id that its own log line carries. Keep the id with the message:
+      // without it an operator has a user complaint and no way to find the
+      // traceback.
+      const requestId = typeof details?.requestId === "string" ? details.requestId : "";
+      return new ApiError(
+        code || "internal_error",
+        requestId ? `${message} (ref: ${requestId})` : message,
+        res.status,
+        details,
+      );
     }
     return new ApiError(code, message, res.status, details);
   }
@@ -534,6 +847,19 @@ export class HttpApi implements MarketingApi {
     return this.parse(z.array(CampaignSchema), campaigns, "/campaigns");
   }
 
+  async listMetaAccountCampaigns(input?: ListMetaAccountCampaignsInput) {
+    const raw = await this.get("/integrations/meta/campaigns", {
+      q: input?.search,
+      limit: input?.limit ?? 50,
+      after: input?.after,
+    });
+    return this.parse(
+      MetaAccountCampaignPageSchema,
+      mapMetaAccountCampaignPage(raw),
+      "/integrations/meta/campaigns",
+    );
+  }
+
   async getCampaign(id: string) {
     const payload = await this.get(`/campaigns/${id}`);
     return this.parse(CampaignSchema, mapCampaign(payload.campaign, payload), `/campaigns/${id}`);
@@ -544,71 +870,88 @@ export class HttpApi implements MarketingApi {
     return this.parse(CampaignSchema, mapCampaign(created), "/campaigns");
   }
 
-  async updateCampaign(): Promise<never> {
-    throw unsupported("Campaign updates", "The backend has no PATCH /campaigns/{id} endpoint yet.");
+  async prepareMetaAdPlan(draft: CampaignDraft, plan: MetaAdPlanSettings) {
+    const raw = await this.post("/campaigns/meta-ad-plan", {
+      campaign: toCampaignCreateBody({ ...draft, launchNow: false }),
+      plan,
+    });
+    return this.parse(MetaAdPlanCreatedSchema, raw, "/campaigns/meta-ad-plan");
   }
 
-  async generateStrategy(input: GenerateStrategyInput): Promise<CampaignStrategy> {
-    const raw = await this.post("/campaigns/generate-strategy", {
-      objective: input.objective,
-      daily_budget: input.dailyBudget,
-      audience: input.audience ?? {},
-      brief: input.brief ?? "",
+  async assistMetaAdPlan(input: MetaAdPlanAssistInput): Promise<MetaAdPlanAssistResponse> {
+    const payload = MetaAdPlanAssistInputSchema.parse(input);
+    const raw = await this.raw("/campaigns/meta-ad-plan/assist", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      timeoutMs: ASSISTANT_TIMEOUT_MS,
     });
+    return this.parse(MetaAdPlanAssistResponseSchema, raw, "/campaigns/meta-ad-plan/assist");
+  }
 
-    const phases = asArray(raw.phases).map((p) => {
-      const pObj = isRecord(p) ? p : {};
-      return {
-        name: String(pObj.name ?? "Phase"),
-        durationDays: Number(pObj.duration_days ?? pObj.durationDays ?? 14),
-        focus: String(pObj.focus ?? "Execution"),
-      };
-    });
-    const kpis = asArray(raw.kpis).map((k) => {
-      const kObj = isRecord(k) ? k : {};
-      return {
-        metric: String(kObj.metric ?? "Conversions"),
-        target: Number(kObj.target ? String(kObj.target).replace(/[^0-9.]/g, "") : 100) || 100,
-      };
-    });
-    const rawChannels = asArray(raw.recommended_channels ?? raw.recommendedChannels ?? ["facebook", "instagram"]);
-    const validChannels: ("facebook" | "instagram" | "messenger" | "audience_network")[] = [];
-    for (const c of rawChannels) {
-      const lower = String(c).toLowerCase();
-      if (lower.includes("insta")) validChannels.push("instagram");
-      else if (lower.includes("face")) validChannels.push("facebook");
-      else if (lower.includes("mess")) validChannels.push("messenger");
-      else if (lower.includes("aud")) validChannels.push("audience_network");
-      else validChannels.push("facebook");
-    }
-    const channels: ("facebook" | "instagram" | "messenger" | "audience_network")[] =
-      validChannels.length > 0
-        ? (Array.from(new Set(validChannels)) as ("facebook" | "instagram" | "messenger" | "audience_network")[])
-        : ["facebook", "instagram"];
+  async previewMetaAdPlan(recommendationId: string) {
+    const raw = await this.post(`/recommendations/${recommendationId}/approve`, { confirm: false });
+    return this.parse(MetaAdPlanApprovalResponseSchema, raw, `/recommendations/${recommendationId}/approve`);
+  }
 
-    const mapped: CampaignStrategy = {
-      summary: String(raw.tagline ?? raw.name ?? input.brief ?? "Integrated performance marketing strategy"),
-      keyMessages: asArray(raw.messaging_pillars ?? raw.messagingPillars ?? raw.creative_angles ?? raw.creativeAngles).map(String),
-      channels,
-      placements: ["Feed", "Stories", "Reels"],
-      biddingStrategy: "lowest_cost",
-      phases: phases.length > 0 ? phases : [
-        { name: "Awareness & Discovery", durationDays: 7, focus: "Audience reach & video views" },
-        { name: "Conversion & Scale", durationDays: 14, focus: "Direct sales & lead generation" },
-      ],
-      kpis: kpis.length > 0 ? kpis : [
-        { metric: "CTR", target: 2.5 },
-        { metric: "ROAS", target: 3.5 },
-      ],
+  async confirmMetaAdPlan(recommendationId: string) {
+    const raw = await this.post(`/recommendations/${recommendationId}/approve`, { confirm: true });
+    return this.parse(MetaAdPlanApprovalResponseSchema, raw, `/recommendations/${recommendationId}/approve`);
+  }
+
+  async activateMetaAdPlan(
+    recommendationId: string,
+    confirm: boolean,
+  ): Promise<MetaAdPlanActivationResponse> {
+    // confirm=false only previews which Meta objects would go ACTIVE.
+    const path = `/recommendations/${recommendationId}/activate`;
+    const raw = await this.post(path, { confirm });
+    return this.parse(MetaAdPlanActivationResponseSchema, raw, path);
+  }
+
+  async updateCampaign(input: UpdateCampaignInput): Promise<Campaign> {
+    const body: Record<string, unknown> = {};
+    const patch = input.patch;
+    if (patch.name !== undefined) body.name = patch.name;
+    if (patch.status !== undefined) body.status = patch.status;
+    // The backend column is `budget` (a daily amount), not `dailyBudget`.
+    if (patch.dailyBudget !== undefined) body.budget = patch.dailyBudget;
+    if (patch.endDate !== undefined) body.end_date = patch.endDate;
+    const raw = await this.patch(`/campaigns/${input.id}`, body);
+    return this.parse(CampaignSchema, mapCampaign(raw), `/campaigns/${input.id}`);
+  }
+
+  async generateStrategy(input: GenerateStrategyInput): Promise<GeneratedCampaignStrategy> {
+    // Gemini may internally retry transient 503s; allow this draft-only request
+    // more than the global 30s timeout so the browser does not abandon a request
+    // that the backend is still processing.
+    const raw = await this.raw("/campaigns/strategy", {
+      method: "POST",
+      body: JSON.stringify(input),
+      timeoutMs: CAMPAIGN_STRATEGY_TIMEOUT_MS,
+    });
+    return this.parse(GeneratedCampaignStrategySchema, raw, "/campaigns/strategy");
+  }
+
+  async getCampaignPerformance(id: string): Promise<MetricPoint[]> {
+    // GET /campaigns/{id}/insights returns `latest.daily`: one row per day.
+    // When Meta is not connected the backend answers status="unavailable" with
+    // an empty series rather than an error, so this resolves to [] and the
+    // caller renders its own empty state instead of a hard failure.
+    const payload = (await this.get(`/campaigns/${id}/insights`)) as {
+      latest?: { daily?: unknown } | null;
     };
-    if (mapped.keyMessages.length === 0) {
-      mapped.keyMessages = ["High-converting product value proposition", "Limited-time introductory discount"];
-    }
-    return this.parse(CampaignStrategySchema, mapped, "/campaigns/generate-strategy");
-  }
-
-  async getCampaignPerformance(): Promise<never> {
-    throw unsupported("Campaign performance", "Connect Meta, then read the Insights screen.");
+    const rows = asArray(payload.latest?.daily);
+    const points = rows.map((row) => {
+      const r = row as Record<string, unknown>;
+      return {
+        date: String(r.date ?? ""),
+        impressions: Number(r.impressions ?? 0),
+        clicks: Number(r.clicks ?? 0),
+        conversions: Number(r.conversions ?? 0),
+        spend: Number(r.spend ?? 0),
+      };
+    });
+    return this.parse(z.array(MetricPointSchema), points, `/campaigns/${id}/insights`);
   }
 
   async getCampaignRecommendations(id: string) {
@@ -621,15 +964,73 @@ export class HttpApi implements MarketingApi {
     throw unsupported("Campaign learnings", "Learnings are surfaced inside assistant answers.");
   }
 
-  async getAudience(): Promise<never> {
-    throw unsupported("Audience detail", "Campaign audiences are stored as free text in the backend.");
+  async getAudience(id: string): Promise<Audience> {
+    const raw = await this.get(`/audiences/${id}`);
+    const saved = this.parse(SavedAudienceSchema, raw, `/audiences/${id}`);
+    return this.parse(
+      AudienceSchema,
+      {
+        id: saved.id,
+        name: saved.name,
+        description: saved.description,
+        ageMin: saved.targeting.ageMin,
+        ageMax: saved.targeting.ageMax,
+        genders: saved.targeting.genders,
+        locations: saved.targeting.locations,
+        countries: saved.targeting.countries,
+        interests: saved.targeting.interests,
+        interestTargets: saved.targeting.interestTargets,
+        targetingTargets: saved.targeting.targetingTargets.length
+          ? saved.targeting.targetingTargets
+          : saved.targeting.interestTargets.map((target) => ({ ...target, category: "interests" as const })),
+        behaviors: saved.targeting.behaviors,
+        source: saved.source,
+        isArchived: saved.isArchived,
+      },
+      `/audiences/${id}`,
+    );
+  }
+
+  async listAudiences(): Promise<SavedAudience[]> {
+    const raw = await this.get("/audiences");
+    return this.parse(SavedAudienceListSchema, raw, "/audiences").audiences;
+  }
+
+  async createAudience(input: SavedAudienceInput): Promise<SavedAudience> {
+    const payload = SavedAudienceInputSchema.parse(input);
+    const raw = await this.post("/audiences", payload);
+    return this.parse(SavedAudienceSchema, raw, "/audiences");
+  }
+
+  async updateAudience(input: { id: string; patch: Partial<SavedAudienceInput> }): Promise<SavedAudience> {
+    const raw = await this.patch(`/audiences/${input.id}`, input.patch);
+    return this.parse(SavedAudienceSchema, raw, `/audiences/${input.id}`);
+  }
+
+  async archiveAudience(id: string): Promise<SavedAudience> {
+    const raw = await this.raw(`/audiences/${id}`, { method: "DELETE" });
+    return this.parse(SavedAudienceSchema, raw, `/audiences/${id}`);
+  }
+
+  async suggestAudiences(input: AudienceSuggestionInput): Promise<AudienceSuggestionResponse> {
+    const raw = await this.raw("/audiences/suggest", {
+      method: "POST",
+      body: JSON.stringify(input),
+      timeoutMs: AUDIENCE_SUGGESTION_TIMEOUT_MS,
+    });
+    return this.parse(AudienceSuggestionResponseSchema, raw, "/audiences/suggest");
   }
 
   /* ---------------------------------------------------------------- creatives */
 
   async listCreatives(campaignId?: string) {
-    const list = asArray(await this.get("/creatives"))
+    const query = campaignId
+      ? `?campaignId=${encodeURIComponent(campaignId)}&limit=500`
+      : "";
+    const list = asArray(await this.get(`/creatives${query}`))
       .map((c) => mapCreative(c))
+      // Kept as a second line of defence: if the server-side filter ever drifts,
+      // a creative from another campaign still cannot leak into this list.
       .filter((c) => (campaignId ? c.campaignId === campaignId : true));
     return this.parse(z.array(CreativeSchema), list, "/creatives");
   }
@@ -638,28 +1039,100 @@ export class HttpApi implements MarketingApi {
     throw unsupported("Creative detail", "The backend only exposes the creative list.");
   }
 
-  async generateCreative(input: GenerateCreativeInput) {
-    const payload = await this.post("/creatives/generate", {
-      prompt: input.brief,
-      aspectRatio: input.aspectRatio ?? "1:1",
-      campaignId: input.campaignId,
-      numImages: Math.min(4, Math.max(1, input.count)),
-      referenceAnalysisId: input.referenceAnalysisId,
+  /**
+   * Upload a user-supplied image as a creative.
+   *
+   * Multipart, because that is the only shape FastAPI's `UploadFile` reads. The
+   * backend validates the file signature and stores the bytes inline, then this
+   * maps it through the same adapter as `/creatives/generate` — so the UI never
+   * has to know whether an image was made or uploaded.
+   */
+  async uploadCreative(input: { file: File; campaignId?: string; note?: string }) {
+    const form = new FormData();
+    form.append("file", input.file, input.file.name || "upload.png");
+    if (input.campaignId) form.append("campaignId", input.campaignId);
+    if (input.note) form.append("note", input.note);
+
+    const payload = await this.raw<Json>("/creatives/upload", {
+      method: "POST",
+      body: form,
+      // A 10 MB upload on a slow link is not a 30 s request.
+      timeoutMs: 120_000,
     });
+    return this.parse(CreativeSchema, mapCreative(payload), "/creatives/upload");
+  }
+
+  async generateCreative(input: GenerateCreativeInput) {
+    const payload = await this.raw<Json>("/creatives/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: input.brief,
+        aspectRatio: input.aspectRatio ?? "1:1",
+        campaignId: input.campaignId,
+        numImages: Math.min(4, Math.max(1, input.count)),
+        referenceAnalysisId: input.referenceAnalysisId,
+        referenceImageUrl: input.referenceImageUrl,
+      }),
+      timeoutMs: 120_000,
+    });
+    // The backend answers 200 with `assets: []` when the image provider is not
+    // configured or refuses. Surfacing that as an error is the difference between
+    // a red toast explaining why and a green "0 creatives generated".
+    if (payload.status === "unavailable" || payload.status === "partial") {
+      throw new ApiError(
+        "IMAGE_GENERATION_UNAVAILABLE",
+        String(
+          payload.unavailableReason ??
+            "Image generation is not available. Check the image provider in Settings → Connectors.",
+        ),
+        503,
+      );
+    }
     const assets = asArray(payload.assets).map((a) => mapCreative(a));
+    if (assets.length === 0) {
+      throw new ApiError(
+        "IMAGE_GENERATION_EMPTY",
+        "The image provider returned no asset and gave no reason. Check the image provider in Settings → Connectors.",
+        503,
+      );
+    }
     return this.parse(z.array(CreativeSchema), assets, "/creatives/generate");
   }
 
   async generateVariations(): Promise<never> {
-    throw unsupported("Creative variations", "Use the assistant: it routes to Layla's ad_variations task.");
+    throw unsupported("Creative variations", "Open Write with AI; Layla's text endpoint is /creatives/generate-text, not a queued /tasks job.");
   }
 
   async analyzeReference(input: AnalyzeReferenceInput) {
-    const payload = await this.post("/creatives/analyze-reference", {
-      imageUrl: input.source,
-      kind: input.kind,
+    const source = input.source.trim();
+    const request = source.startsWith("data:")
+      ? { imageData: source, sourceName: input.fileName ?? "" }
+      : { imageUrl: source, sourceName: input.fileName ?? "" };
+    const payload = await this.raw("/creatives/analyze-reference", {
+      method: "POST",
+      body: JSON.stringify(request),
+      timeoutMs: REFERENCE_ANALYSIS_TIMEOUT_MS,
     });
     return this.parse(ReferenceAnalysisSchema, mapReferenceAnalysis(payload), "/creatives/analyze-reference");
+  }
+
+  async listCreativeReferences() {
+    const raw = asArray(await this.get("/creatives/references")).map((item) => mapCreativeReference(item));
+    return this.parse(z.array(CreativeReferenceSchema), raw, "/creatives/references");
+  }
+
+  async updateCreativeReference(input: { id: string; favorite: boolean }) {
+    const raw = await this.patch(`/creatives/references/${input.id}`, { favorite: input.favorite });
+    return this.parse(CreativeReferenceSchema, mapCreativeReference(raw), `/creatives/references/${input.id}`);
+  }
+
+  async uploadChatAttachment(input: ChatAttachmentUpload) {
+    const payload = await this.raw("/assistant/attachments", {
+      method: "POST",
+      body: JSON.stringify({ imageData: input.source, sourceName: input.fileName ?? "" }),
+      timeoutMs: REFERENCE_ANALYSIS_TIMEOUT_MS,
+    });
+    return this.parse(ChatAttachmentSchema, payload, "/assistant/attachments");
   }
 
   async addToCampaign(): Promise<never> {
@@ -667,6 +1140,11 @@ export class HttpApi implements MarketingApi {
   }
 
   /* ----------------------------------------------------------------- insights */
+
+  async getCampaignAdInsights(id: string) {
+    const raw = await this.get(`/campaigns/${id}/ads/insights`);
+    return this.parse(MetaAdInsightsResponseSchema, raw, `/campaigns/${id}/ads/insights`);
+  }
 
   async getInsights(input?: ListInsightsInput) {
     let campaignIds: string[];
@@ -743,20 +1221,49 @@ export class HttpApi implements MarketingApi {
   }
 
   private assistantPayload(input: SendMessageInput) {
-    const chip = input.context[0];
+    // Values are mostly single ids; `attachmentIds` is the one list-valued key.
+    const context: Record<string, unknown> = {};
+    // Turn-scoped images ride along as a list, not as the single id the other
+    // kinds use: a message may carry several photos, and they must not become
+    // part of the conversation's sticky context.
+    const attachmentIds = [...input.context.filter((chip) => chip.kind === "attachment").map((chip) => chip.id)];
+    if (input.attachmentIds?.length) attachmentIds.push(...input.attachmentIds);
+    for (const chip of input.context) {
+      if (chip.kind === "attachment") continue;
+      const field =
+        chip.kind === "campaign"
+          ? "campaignId"
+          : chip.kind === "creative"
+            ? "creativeId"
+            : chip.kind === "reference"
+              ? "referenceAnalysisId"
+              : chip.kind === "competitor"
+                ? "competitorId"
+                : chip.kind === "research"
+                  ? "researchItemId"
+                  : "insightId";
+      // The backend context contract has one id per entity kind. Preserve the
+      // first explicit selection of each kind instead of dropping non-campaign chips.
+      if (!context[field]) context[field] = chip.id;
+      if (chip.kind === "competitor" && !context["competitorName"]) {
+        context["competitorName"] = chip.label;
+      }
+    }
+    if (input.referenceAnalysisId) context.referenceAnalysisId = input.referenceAnalysisId;
+    if (input.workflow) context.workflow = input.workflow;
+    if (input.promptType) context.promptType = input.promptType;
+    if (input.creativeMode) context.creativeMode = input.creativeMode;
+    // `Array.from` (not spread) so the file keeps compiling against the project's
+    // configured target, which does not enable downlevel iteration.
+    const uniqueAttachments = Array.from(new Set(attachmentIds)).slice(0, 4);
+    if (uniqueAttachments.length) context.attachmentIds = uniqueAttachments;
     return {
       conversationId: input.conversationId ?? undefined,
       message: input.text,
       language: input.language ?? undefined,
-      context: chip
-        ? {
-            campaignId: chip.kind === "campaign" ? chip.id : undefined,
-            creativeId: chip.kind === "creative" ? chip.id : undefined,
-            insightId: chip.kind === "insight" ? chip.id : undefined,
-            competitorId: chip.kind === "competitor" ? chip.id : undefined,
-            competitorName: chip.kind === "competitor" ? chip.label : undefined,
-          }
-        : undefined,
+      personaId: input.personaId,
+      answer: input.answer,
+      context: Object.keys(context).length ? context : undefined,
     };
   }
 
@@ -768,20 +1275,22 @@ export class HttpApi implements MarketingApi {
       path,
     );
     const asstTime = new Date(assistantMessage.createdAt).getTime();
-    const userCreatedAt = isNaN(asstTime)
+    const defaultUserCreatedAt = isNaN(asstTime)
       ? new Date(Date.now() - 3000).toISOString()
       : new Date(asstTime - 3000).toISOString();
 
+    const rawUserMessage = isRecord(payload.userMessage)
+      ? mapMessage(payload.userMessage, conversationId)
+      : {
+          id: `u_${Date.now()}`,
+          conversationId,
+          role: "user" as const,
+          blocks: [{ type: "text" as const, text: input.text }],
+          createdAt: defaultUserCreatedAt,
+        };
     const userMessage = this.parse(
       MessageSchema,
-      {
-        id: `u_${Date.now()}`,
-        conversationId,
-        role: "user",
-        blocks: [{ type: "text", text: input.text }],
-        context: input.context,
-        createdAt: userCreatedAt,
-      },
+      { ...rawUserMessage, context: input.context },
       path,
     );
     const conversation = this.parse(
@@ -865,10 +1374,21 @@ export class HttpApi implements MarketingApi {
 
   /* ------------------------------------------------------------------- tasks */
 
-  /** The backend takes `(persona_id, task)` as query params, not a JSON body. */
+  /** Task identity is in query params; non-secret inputs and conversation link use the optional body. */
   async startTask(input: StartTaskInput) {
-    const target = ACTION_TASK_MAP[input.type] ?? ACTION_TASK_MAP.ANALYZE_CAMPAIGN;
-    const raw = await this.post("/tasks", undefined, { persona_id: target.personaId, task: target.task });
+    const target = ACTION_TASK_MAP[input.type];
+    if (!target) {
+      throw new ApiError(
+        "DIRECT_ACTION",
+        `${input.type} is not a queued task; use its dedicated API workflow instead.`,
+        400,
+      );
+    }
+    const raw = await this.post(
+      "/tasks",
+      { inputs: input.payload, conversationId: input.conversationId },
+      { persona_id: target.personaId, task: target.task },
+    );
     return this.parse(AgentTaskSchema, mapAgentTask(raw, input.type), "/tasks");
   }
 
@@ -884,10 +1404,19 @@ export class HttpApi implements MarketingApi {
     return this.parse(MetaConnectionSchema, mapMetaStatus(raw), "/integrations/meta/status");
   }
 
+  async searchMetaInterests(query: string, category: TargetingCategory) {
+    const raw = await this.get("/integrations/meta/targeting-search", { q: query, category });
+    return this.parse(
+      MetaTargetingSearchSchema,
+      raw,
+      "/integrations/meta/targeting-search",
+    );
+  }
+
   async connectMeta(): Promise<never> {
     throw new ApiError(
-      "MISSING_CREDENTIALS",
-      "Meta connection needs a Meta access token. POST /integrations/meta/connect requires { accessToken } and this screen does not collect one yet.",
+      "ADMIN_CONFIGURATION_REQUIRED",
+      "Meta is admin-managed. Configure the access token, ad account ID, and Facebook Page ID in Settings > Admin > Connectors > Meta; do not paste credentials into chat.",
       400,
     );
   }
@@ -901,32 +1430,71 @@ export class HttpApi implements MarketingApi {
     return this.getMetaConnection();
   }
 
-  /* ---------------------------------------------------- content calendar */
+  /* ---------------------------------------------------------- content calendar */
 
   async listContentItems(input?: ListContentInput) {
-    const list = asArray(await this.get("/content", input as Record<string, unknown> | undefined)).map((item) =>
-      mapContentItem(item),
-    );
+    const raw = await this.get<Json[]>("/content", input ? {
+      month: input.month,
+      campaignId: input.campaignId,
+    } : undefined);
+    const list = asArray(raw).map((item) => mapContentItem(item));
     return this.parse(z.array(ContentItemSchema), list, "/content");
   }
 
   async generateContentCalendar(input: GenerateContentCalendarInput) {
-    const list = asArray(await this.post("/content/generate", input)).map((item) => mapContentItem(item));
+    const request = GenerateContentCalendarInputSchema.parse(input);
+    const raw = await this.raw<Json[]>("/content/generate", {
+      method: "POST",
+      body: JSON.stringify(request),
+      timeoutMs: ASSISTANT_TIMEOUT_MS,
+    });
+    const list = asArray(raw).map((item) => mapContentItem(item));
     return this.parse(z.array(ContentItemSchema), list, "/content/generate");
   }
 
   async updateContentItem(input: UpdateContentItemInput) {
-    const raw = await this.patch(`/content/${input.id}`, input.patch);
-    return this.parse(ContentItemSchema, mapContentItem(raw), `/content/${input.id}`);
+    const request = UpdateContentItemInputSchema.parse(input);
+    const raw = await this.patch<Json>(`/content/${encodeURIComponent(request.id)}`, request.patch);
+    return this.parse(ContentItemSchema, mapContentItem(raw), `/content/${request.id}`);
   }
 
-  async deleteContentItem(id: string) {
-    await this.delete(`/content/${id}`);
-    return { id };
+  async deleteContentItem(id: string): Promise<{ id: string }> {
+    const raw = await this.delete<Json>(`/content/${encodeURIComponent(id)}`);
+    return this.parse(z.object({ id: z.string() }), raw ?? { id }, `/content/${id}`);
   }
 
-  async generateText(): Promise<never> {
-    throw unsupported("Write with AI", "Ask the assistant for ad copy, scripts or image prompts.");
+  async generateText(input: GenerateTextInput): Promise<GeneratedText> {
+    if (input.tool === "generate_image_prompt" || input.tool === "generate_video_prompt") {
+      throw unsupported("Image/video prompt generation", "Continue in Layla chat to gather details and approve the final prompt.");
+    }
+    const response = await this.raw<Json>("/creatives/generate-text", {
+      method: "POST",
+      timeoutMs: ASSISTANT_TIMEOUT_MS,
+      body: JSON.stringify({
+        tool: input.tool,
+        brief: input.brief,
+        language: input.language,
+        campaignId: input.campaignId,
+        creativeId: input.creativeId,
+      }),
+    });
+    const row = isRecord(response) ? response : {};
+    const id = str(row.id);
+    if (!id) {
+      throw new ApiError("SCHEMA_MISMATCH", "Layla's generation endpoint did not return an id.", 200);
+    }
+    const output = isRecord(row.output) ? row.output : {};
+    const sections = generatedTextSections(input.tool, output, input.language);
+    const titles = LAYLA_TEXT_TITLES[input.language] ?? LAYLA_TEXT_TITLES.en;
+    const generated = {
+      id,
+      tool: input.tool,
+      title: titles[input.tool],
+      sections,
+      plainText: sections.map((section) => `${section.heading}\n${section.body}`).join("\n\n"),
+      createdAt: str(row.createdAt, new Date().toISOString()),
+    };
+    return this.parse(GeneratedTextSchema, generated, "/creatives/generate-text");
   }
 
   /* ---------------------------------------------------------------- personas */
@@ -1039,6 +1607,43 @@ export class HttpApi implements MarketingApi {
   async getUsage(period: UsagePeriod = "today"): Promise<Usage> {
     const raw = await this.get("/usage", { period });
     return this.parse(UsageSchema, mapUsage(raw), "/usage");
+  }
+
+  /* ------------------------------------------- subscriptions & observability */
+
+  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    const raw = await this.get("/subscriptions/plans");
+    return asArray(raw)
+      .map((plan) => this.parse(SubscriptionPlanSchema, mapSubscriptionPlan(plan), "/subscriptions/plans"))
+      .sort((a, b) => a.dailyTokenBudget - b.dailyTokenBudget);
+  }
+
+  async getSubscription(): Promise<WorkspaceSubscription> {
+    const raw = await this.get("/subscriptions/current");
+    return this.parse(
+      WorkspaceSubscriptionSchema,
+      mapWorkspaceSubscription(raw),
+      "/subscriptions/current",
+    );
+  }
+
+  async switchPlan(planId: PlanId): Promise<SwitchPlanResponse> {
+    // The backend keys this body by the enum value, not the display name.
+    const raw = await this.post("/subscriptions/switch", { plan_id: planId });
+    return this.parse(
+      SwitchPlanResponseSchema,
+      mapSwitchPlanResponse(raw),
+      "/subscriptions/switch",
+    );
+  }
+
+  async getObservabilityStatus(): Promise<ObservabilityStatus> {
+    const raw = await this.get("/subscriptions/observability");
+    return this.parse(
+      ObservabilityStatusSchema,
+      mapObservabilityStatus(raw),
+      "/subscriptions/observability",
+    );
   }
 
   async getAudit(filters?: AuditFilters) {

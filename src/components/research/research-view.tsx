@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { 
   AlertTriangle,
@@ -10,12 +11,14 @@ import {
   CheckCircle2, 
   Compass, 
   Crosshair, 
+  GitCompare,
   ExternalLink,
   Globe, 
   Globe2, 
   Images, 
   KeyRound, 
   Loader2, 
+  MessageSquare,
   Sparkles, 
   Star, 
   X, 
@@ -27,7 +30,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
+import { ComparisonPanel, type ComparisonPayload } from "./comparison-panel";
 import { getAccessToken, getActiveWorkspaceId } from "@/store/auth-store";
+import { useAssistantStore } from "@/store/assistant-store";
 
 export type ToolKey =
   | "analyze_website"
@@ -68,9 +73,11 @@ interface ResearchItem {
 interface ToolConfig {
   key: ToolKey;
   icon: LucideIcon;
-  title: string;
-  desc: string;
-  placeholder?: string;
+  /**
+   * Titles, descriptions and placeholders are resolved from the message
+   * catalogue at render time (``research.tools.<key>.*``) so both locales stay in
+   * sync with the backend's tool keys.
+   */
   field: string | null;
   required: boolean;
   type?: "url" | "text";
@@ -80,9 +87,6 @@ const TOOLS: ToolConfig[] = [
   { 
     key: "analyze_website", 
     icon: Globe, 
-    title: "Website analyzer",
-    desc: "Positioning, offers, trust signals and gaps of any site.",
-    placeholder: "https://yourbrand.com",
     field: "url", 
     required: true, 
     type: "url" 
@@ -90,72 +94,48 @@ const TOOLS: ToolConfig[] = [
   { 
     key: "analyze_competitor", 
     icon: Crosshair, 
-    title: "Competitor research",
-    desc: "Who's advertising to your audience and how.",
-    placeholder: "Competitor name or category (optional)",
     field: "competitor", 
     required: false 
   },
   { 
     key: "analyze_social_profile", 
     icon: AtSign, 
-    title: "Social profile",
-    desc: "Content pillars, engagement and what to post more of.",
-    placeholder: "@handle",
     field: "handle", 
     required: true 
   },
   { 
     key: "analyze_reviews", 
     icon: Star, 
-    title: "Reviews",
-    desc: "Themes, quotes and sentiment from customer reviews.",
-    placeholder: "Google Maps / store URL (optional)",
     field: "url", 
     required: false 
   },
   { 
     key: "analyze_market", 
     icon: Compass, 
-    title: "Market analysis",
-    desc: "Size, segments and trends for your category.",
-    placeholder: "Category or question (optional)",
     field: "category", 
     required: false 
   },
   { 
     key: "analyze_keywords", 
     icon: KeyRound, 
-    title: "Keywords",
-    desc: "Search demand clusters, intent and difficulty.",
-    placeholder: "Seed keyword, e.g. cold brew cairo",
     field: "seed", 
     required: true 
   },
   { 
     key: "analyze_competitor_creatives", 
     icon: Images, 
-    title: "Competitor ads",
-    desc: "Long-running competitor creatives and their hooks.",
-    placeholder: "Competitor name (optional)",
     field: "competitor", 
     required: false 
   },
   { 
     key: "detect_market_gaps", 
     icon: Sparkles, 
-    title: "Market gaps",
-    desc: "Unserved needs ranked by opportunity, from all research so far.",
-    placeholder: undefined,
     field: null, 
     required: false 
   },
   { 
     key: "generate_marketing_strategy", 
     icon: BrainCircuit, 
-    title: "Marketing strategy",
-    desc: "90-day positioning, channels, phases and KPIs.",
-    placeholder: "Anything to emphasise? (optional)",
     field: "notes", 
     required: false 
   },
@@ -315,10 +295,35 @@ export function ResearchView() {
   const t = useTranslations("research");
   const locale = useLocale();
   const [activeResearch, setActiveResearch] = useState<ResearchItem | null>(null);
+  const router = useRouter();
+  const setPendingPrompt = useAssistantStore((state) => state.setPendingPrompt);
+
+  /**
+   * Hand a stored research result to the assistant.
+   *
+   * The chip carries the memory-row id, which the backend turns back into the
+   * stored report (`context.researchItemId` -> `research_item_context`). Before
+   * this existed the only route from Research to Chat was an @-mention of a
+   * competitor *name*, so the assistant re-ran the same research instead of
+   * reading the one on screen.
+   */
+  const askAssistant = (item: ResearchItem) => {
+    setPendingPrompt({
+      text: t("askAssistantPrompt", { title: item.title }),
+      context: [{ kind: "research", id: item.id, label: item.title }],
+    });
+    router.push("/assistant");
+  };
   const [recentItems, setRecentItems] = useState<ResearchItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [pendingTool, setPendingTool] = useState<ToolKey | null>(null);
   const [currentQuery, setCurrentQuery] = useState("");
+  // Competitor-vs-competitor gap analysis — the structured replacement for the
+  // old input-less "detect gaps" button.
+  const [compareA, setCompareA] = useState("");
+  const [compareB, setCompareB] = useState("");
+  const [compareCategory, setCompareCategory] = useState("");
+  const [comparing, setComparing] = useState(false);
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
 
@@ -394,22 +399,126 @@ export function ResearchView() {
     }
   };
 
+  const handleCompare = async () => {
+    const a = compareA.trim();
+    const b = compareB.trim();
+    if (!a || !b) {
+      toast.error(t("compareNeedBoth"));
+      return;
+    }
+    if (a.toLowerCase() === b.toLowerCase()) {
+      toast.error(t("compareNeedDifferent"));
+      return;
+    }
+    if (loading) return;
+
+    setLoading(true);
+    setComparing(true);
+    setPendingTool(null);
+    setCurrentQuery(`${a} vs ${b}`);
+
+    try {
+      const token = getAccessToken();
+      const wsId = getActiveWorkspaceId();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (wsId) headers["X-Workspace-Id"] = wsId;
+
+      const res = await fetch(`${apiBase}/research/compare`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          competitor_a: a,
+          competitor_b: b,
+          category: compareCategory.trim() || null,
+          language: locale,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || errJson.message || t("compareFailed"));
+      }
+
+      const data = (await res.json()) as ResearchItem;
+      setActiveResearch(data);
+      await fetchRecent();
+      toast.success(t("compareDone"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("compareFailed"));
+    } finally {
+      setLoading(false);
+      setComparing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader title={t("title")} description={t("desc")} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
-        {/* Left Side: Interactive Tools Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {TOOLS.map((tool) => (
-            <ToolCard
-              key={tool.key}
-              tool={tool}
-              isPending={pendingTool === tool.key && loading}
-              isAnyBusy={loading}
-              onRun={(val) => handleRunTool(tool.key, val)}
-            />
-          ))}
+        {/* Left Side: competitor comparison + the single-input tools */}
+        <div className="space-y-4">
+          <Card className="border-primary/30">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                <GitCompare className="h-4 w-4 text-primary" />
+                {t("compareTitle")}
+              </CardTitle>
+              <CardDescription className="text-xs">{t("compareDesc")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  value={compareA}
+                  onChange={(event) => setCompareA(event.target.value)}
+                  placeholder={t("comparePlaceholderA")}
+                  aria-label={t("comparePlaceholderA")}
+                  disabled={loading}
+                />
+                <Input
+                  value={compareB}
+                  onChange={(event) => setCompareB(event.target.value)}
+                  placeholder={t("comparePlaceholderB")}
+                  aria-label={t("comparePlaceholderB")}
+                  disabled={loading}
+                />
+              </div>
+              <Input
+                value={compareCategory}
+                onChange={(event) => setCompareCategory(event.target.value)}
+                placeholder={t("comparePlaceholderCategory")}
+                aria-label={t("comparePlaceholderCategory")}
+                disabled={loading}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">{t("compareHint")}</p>
+                <Button size="sm" onClick={() => void handleCompare()} disabled={loading}>
+                  {comparing ? (
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <GitCompare className="me-2 h-4 w-4" />
+                  )}
+                  {comparing ? t("compareRunning") : t("compareRun")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {TOOLS.map((tool) => (
+              <ToolCard
+                key={tool.key}
+                tool={tool}
+                isPending={pendingTool === tool.key && loading}
+                isAnyBusy={loading}
+                onRun={(val) => handleRunTool(tool.key, val)}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Right Side: Active Research Output & Knowledge History */}
@@ -436,27 +545,39 @@ export function ResearchView() {
                     {activeResearch.saved_to_memory !== false ? (
                       <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[11px] gap-1">
                         <CheckCircle2 className="h-3 w-3" />
-                        Saved to Brand Memory & Brain
+                        {t("savedBadge")}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[11px] gap-1">
                         <AlertTriangle className="h-3 w-3" />
-                        Verification Notice (Not Saved)
+                        {t("notSavedBadge")}
                       </Badge>
                     )}
                     <CardTitle className="text-base font-semibold leading-tight pt-1">
                       {activeResearch.title}
                     </CardTitle>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground"
-                    onClick={() => setActiveResearch(null)}
-                    title="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1.5 text-xs"
+                      onClick={() => askAssistant(activeResearch)}
+                      title={t("askAssistantHint")}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      {t("askAssistant")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground"
+                      onClick={() => setActiveResearch(null)}
+                      title="Close"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -465,10 +586,52 @@ export function ResearchView() {
                   <div className="rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
                     <Sparkles className="h-4 w-4 shrink-0 text-amber-500" />
                     <span>
-                      Auto-corrected typo from <strong>&ldquo;{String(activeResearch.details.corrected_from)}&rdquo;</strong> to <strong>&ldquo;{activeResearch.details.subject ? String(activeResearch.details.subject) : activeResearch.query}&rdquo;</strong> based on market ground truth.
+                      {t("typoCorrected", {
+                        from: String(activeResearch.details.corrected_from),
+                        to: activeResearch.details.subject ? String(activeResearch.details.subject) : activeResearch.query,
+                      })}
                     </span>
                   </div>
                 )}
+
+                {/* Structure notice: the backend reports sections it could not
+                    enforce, so an incomplete report is visible instead of silently
+                    looking like the previous, differently-shaped one. */}
+                {Array.isArray(activeResearch.details?.structure_warnings) &&
+                  (activeResearch.details.structure_warnings as string[]).length > 0 && (
+                    <div
+                      role="status"
+                      className="rounded-md bg-sky-500/10 border border-sky-500/20 px-3 py-2 text-xs text-sky-700 dark:text-sky-400 flex items-start gap-2"
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-sky-500" />
+                      <span>
+                        {t("structureWarning", {
+                          sections: (activeResearch.details.structure_warnings as string[]).join("، "),
+                        })}
+                      </span>
+                    </div>
+                  )}
+
+                {/* Structured comparison (POST /research/compare). Rendered
+                    before the markdown so the matrix is the first thing seen. */}
+                {activeResearch.details?.comparison &&
+                typeof activeResearch.details.comparison === "object" ? (
+                  <div className="rounded-lg border bg-background/60 p-3">
+                    <ComparisonPanel
+                      comparison={activeResearch.details.comparison as ComparisonPayload}
+                      competitorA={
+                        (activeResearch.details.competitors as string[] | undefined)?.[0] ??
+                        activeResearch.query.split(" vs ")[0] ??
+                        "A"
+                      }
+                      competitorB={
+                        (activeResearch.details.competitors as string[] | undefined)?.[1] ??
+                        activeResearch.query.split(" vs ")[1] ??
+                        "B"
+                      }
+                    />
+                  </div>
+                ) : null}
 
                 {/* Structured Markdown Report */}
                 <div className="rounded-lg bg-muted/40 p-4 text-xs max-h-[500px] overflow-y-auto border">
@@ -480,7 +643,7 @@ export function ResearchView() {
                   <div className="rounded-lg border bg-background/80 p-3 space-y-2">
                     <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
                       <Globe2 className="h-3.5 w-3.5 text-primary" />
-                      Verified Web Sources & Citations ({(activeResearch.details.sources as SourceItem[]).length}):
+                      {t("sourcesHeading")} ({(activeResearch.details.sources as SourceItem[]).length}):
                     </span>
                     <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
                       {(activeResearch.details.sources as SourceItem[]).map((s, idx) => (
@@ -502,7 +665,7 @@ export function ResearchView() {
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t">
                   <span className="flex items-center gap-1 font-medium text-primary">
                     <BrainCircuit className="h-3.5 w-3.5" />
-                    {activeResearch.saved_to_memory !== false ? "Available to all AI Agents" : "Ignored from Brain Memory"}
+                    {activeResearch.saved_to_memory !== false ? t("availableToAgents") : t("ignoredFromMemory")}
                   </span>
                   <span>{activeResearch.created_at ? new Date(activeResearch.created_at).toLocaleTimeString() : ""}</span>
                 </div>
@@ -516,20 +679,20 @@ export function ResearchView() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-primary" />
-                  Saved Brand Intelligence
+                  {t("historyTitle")}
                 </CardTitle>
                 <Badge variant="secondary" className="text-xs">
                   {recentItems.length}
                 </Badge>
               </div>
               <CardDescription className="text-xs">
-                Competitor profiles and market facts stored in permanent memory.
+                {t("historyDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {recentItems.length === 0 ? (
                 <div className="text-center py-6 text-xs text-muted-foreground">
-                  No research saved yet. Run a competitor or website search on the left to populate the brain.
+                  {t("historyEmpty")}
                 </div>
               ) : (
                 <ul className="divide-y max-h-[420px] overflow-y-auto">
@@ -546,6 +709,19 @@ export function ResearchView() {
                         <span className="text-[10px] text-muted-foreground shrink-0">
                           {item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}
                         </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            askAssistant(item);
+                          }}
+                          title={t("askAssistant")}
+                          aria-label={t("askAssistant")}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                       <p className="line-clamp-2 text-[11px] text-muted-foreground/80 mt-1">
                         {cleanClientText(item.summary).replace(/[#*•>]/g, "").slice(0, 110)}...
@@ -573,8 +749,15 @@ function ToolCard({
   isAnyBusy: boolean;
   onRun: (value: string) => void;
 }) {
+  const t = useTranslations("research");
   const [value, setValue] = useState("");
   const disabled = isAnyBusy || (tool.required && !value.trim());
+  // The labels live in the message catalogue (messages/{en,ar}.json) keyed by the
+  // same tool key the backend expects. They used to be hard-coded English, so an
+  // Arabic workspace still saw "Website analyzer" and typed English placeholders.
+  const title = t(`tools.${tool.key}.title`);
+  const description = t(`tools.${tool.key}.desc`);
+  const placeholder = t.has(`tools.${tool.key}.placeholder`) ? t(`tools.${tool.key}.placeholder`) : undefined;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -589,9 +772,9 @@ function ToolCard({
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0">
             <tool.icon className="h-4 w-4" />
           </span>
-          <CardTitle className="text-sm truncate">{tool.title}</CardTitle>
+          <CardTitle className="text-sm truncate">{title}</CardTitle>
         </div>
-        <p className="text-xs text-muted-foreground">{tool.desc}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
       </CardHeader>
       <CardContent className="mt-auto">
         <form onSubmit={submit} className="flex gap-2">
@@ -600,8 +783,8 @@ function ToolCard({
               type={tool.type ?? "text"}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={tool.placeholder}
-              aria-label={tool.title}
+              placeholder={placeholder ?? undefined}
+              aria-label={title}
               className="h-9 text-xs"
               dir="auto"
               disabled={isPending}
@@ -618,7 +801,7 @@ function ToolCard({
             ) : (
               <ArrowRight className="h-4 w-4 rtl:rotate-180" />
             )}
-            <span className="ms-1.5">تشغيل</span>
+            <span className="ms-1.5">{t("run")}</span>
           </Button>
         </form>
       </CardContent>

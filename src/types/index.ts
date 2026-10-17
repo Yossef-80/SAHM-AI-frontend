@@ -47,18 +47,121 @@ export type BrandProfile = z.infer<typeof BrandProfileSchema>;
 /* Audience                                                            */
 /* ------------------------------------------------------------------ */
 
+export const TargetingCategorySchema = z.enum([
+  "interests",
+  "behaviors",
+  "job_titles",
+  "employers",
+  "education_majors",
+  "education_schools",
+  "life_events",
+  "industries",
+  "income",
+  "family_statuses",
+  "devices",
+  "operating_systems",
+]);
+export type TargetingCategory = z.infer<typeof TargetingCategorySchema>;
+
+export const AudienceInterestSchema = z.object({ id: z.string().min(1), name: z.string().min(1) });
+export type AudienceInterest = z.infer<typeof AudienceInterestSchema>;
+
+/** A Meta-resolved option selected explicitly by the user. */
+export const AudienceTargetingTargetSchema = AudienceInterestSchema.extend({
+  category: TargetingCategorySchema.default("interests"),
+});
+export type AudienceTargetingTarget = z.infer<typeof AudienceTargetingTargetSchema>;
+
+/** An AI-generated search phrase; it is not itself an active targeting option. */
+export const TargetingSearchTermSchema = z.object({
+  category: TargetingCategorySchema.default("interests"),
+  term: z.string().min(2).max(120),
+});
+export type TargetingSearchTerm = z.infer<typeof TargetingSearchTermSchema>;
+
+export const AudienceTargetingSchema = z.object({
+  ageMin: z.number().int().min(13).max(65).default(18),
+  ageMax: z.number().int().min(13).max(65).default(65),
+  genders: z.array(z.enum(["male", "female", "all"])).default(["all"]),
+  locations: z.array(z.string()).default([]),
+  countries: z.array(z.string()).default([]),
+  interests: z.array(z.string()).default([]),
+  interestTargets: z.array(AudienceInterestSchema).default([]),
+  targetingTargets: z.array(AudienceTargetingTargetSchema).default([]),
+  behaviors: z.array(z.string()).default([]),
+});
+export type AudienceTargeting = z.infer<typeof AudienceTargetingSchema>;
+
+/** Flat view model used by the campaign detail audience tab. */
 export const AudienceSchema = z.object({
   id: IdSchema,
   name: z.string(),
+  description: z.string().nullable().optional(),
   ageMin: z.number().int().min(13),
   ageMax: z.number().int().max(65),
   genders: z.array(z.enum(["male", "female", "all"])),
   locations: z.array(z.string()),
+  countries: z.array(z.string()).default([]),
   interests: z.array(z.string()),
+  interestTargets: z.array(AudienceInterestSchema).default([]),
+  targetingTargets: z.array(AudienceTargetingTargetSchema).default([]),
   behaviors: z.array(z.string()).default([]),
+  source: z.enum(["manual", "ai"]).optional(),
+  isArchived: z.boolean().optional(),
   estimatedReach: z.number().int().nonnegative().optional(),
 });
 export type Audience = z.infer<typeof AudienceSchema>;
+
+export const SavedAudienceSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  targeting: AudienceTargetingSchema,
+  source: z.enum(["manual", "ai"]),
+  isArchived: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type SavedAudience = z.infer<typeof SavedAudienceSchema>;
+
+export const SavedAudienceListSchema = z.object({
+  audiences: z.array(SavedAudienceSchema),
+  total: z.number().int().nonnegative(),
+});
+
+export const SavedAudienceInputSchema = z.object({
+  name: z.string().min(2).max(200),
+  description: z.string().max(1000).nullable().optional(),
+  targeting: AudienceTargetingSchema,
+  source: z.enum(["manual", "ai"]).default("manual"),
+});
+export type SavedAudienceInput = z.infer<typeof SavedAudienceInputSchema>;
+
+export const AudienceSuggestionInputSchema = z.object({
+  campaignName: z.string().min(2).max(200),
+  objective: z.enum(["awareness", "traffic", "engagement", "leads", "sales", "app_installs"]),
+  brief: z.string().max(4000).optional(),
+  countries: z.array(z.string()).max(12).default([]),
+  language: LocaleSchema.default("ar"),
+});
+export type AudienceSuggestionInput = z.infer<typeof AudienceSuggestionInputSchema>;
+
+export const AudienceIdeaSchema = z.object({
+  name: z.string(),
+  summary: z.string(),
+  approach: z.enum(["broad", "targeting_hypothesis", "interest_hypothesis"]),
+  interestSearchTerms: z.array(z.string()).default([]),
+  targetingSearchTerms: z.array(TargetingSearchTermSchema).default([]),
+  rationale: z.string(),
+});
+export type AudienceIdea = z.infer<typeof AudienceIdeaSchema>;
+
+export const AudienceSuggestionResponseSchema = z.object({
+  suggestions: z.array(AudienceIdeaSchema),
+  missingInputs: z.array(z.string()).default([]),
+});
+export type AudienceSuggestionResponse = z.infer<typeof AudienceSuggestionResponseSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Creative                                                            */
@@ -76,6 +179,8 @@ export const CreativeSchema = z.object({
   kind: CreativeKindSchema,
   title: z.string(),
   status: CreativeStatusSchema,
+  /** Original generation prompt when the backend exposes it. */
+  prompt: z.string().optional(),
   /** For image/video: URL of the asset. For copy: undefined. */
   assetUrl: z.string().optional(),
   /** Thumbnail / preview URL (image or video poster). */
@@ -126,6 +231,33 @@ export const CampaignStrategySchema = z.object({
 });
 export type CampaignStrategy = z.infer<typeof CampaignStrategySchema>;
 
+export const GeneratedCampaignChannelSchema = z.object({
+  channel: z.string(),
+  role: z.string().default(""),
+  budgetSharePct: z.number().min(0).max(100).nullable().optional(),
+  placements: z.array(z.string()).default([]),
+  rationale: z.string().default(""),
+});
+export type GeneratedCampaignChannel = z.infer<typeof GeneratedCampaignChannelSchema>;
+
+export const GeneratedCampaignStrategySchema = z.object({
+  summary: z.string(),
+  objective: z.string().nullable().optional(),
+  audience: z.string().nullable().optional(),
+  positioning: z.string().nullable().optional(),
+  keyMessages: z.array(z.string()).default([]),
+  channels: z.array(GeneratedCampaignChannelSchema).default([]),
+  placements: z.array(z.string()).default([]),
+  creativeDirection: z.string().nullable().optional(),
+  ctaDirection: z.string().nullable().optional(),
+  creativesNeeded: z.array(z.string()).default([]),
+  successMetrics: z.array(z.string()).default([]),
+  evidence: z.array(z.string()).default([]),
+  assumptions: z.array(z.string()).default([]),
+  missingInputs: z.array(z.string()).default([]),
+});
+export type GeneratedCampaignStrategy = z.infer<typeof GeneratedCampaignStrategySchema>;
+
 export const CampaignMetricsSchema = z.object({
   impressions: z.number().int().nonnegative(),
   reach: z.number().int().nonnegative(),
@@ -149,6 +281,15 @@ export const MetricPointSchema = z.object({
 });
 export type MetricPoint = z.infer<typeof MetricPointSchema>;
 
+export const CampaignAudienceSnapshotSchema = z.object({
+  id: IdSchema,
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  targeting: AudienceTargetingSchema,
+  estimatedReach: z.number().int().nonnegative().optional(),
+});
+export type CampaignAudienceSnapshot = z.infer<typeof CampaignAudienceSnapshotSchema>;
+
 export const CampaignSchema = z.object({
   id: IdSchema,
   businessId: IdSchema,
@@ -160,6 +301,7 @@ export const CampaignSchema = z.object({
   startDate: IsoDateSchema,
   endDate: IsoDateSchema.nullable(),
   audienceId: IdSchema.nullable(),
+  audienceSnapshot: CampaignAudienceSnapshotSchema.nullable().optional(),
   strategy: CampaignStrategySchema.nullable(),
   creativeIds: z.array(IdSchema),
   metaCampaignId: z.string().nullable(),
@@ -184,15 +326,177 @@ export const CampaignDraftSchema = z.object({
 });
 export type CampaignDraft = z.infer<typeof CampaignDraftSchema>;
 
+/** Non-secret Meta settings collected by the campaign wizard; server validation is authoritative. */
+export const MetaAdPlanSettingsSchema = z.object({
+  objective: CampaignObjectiveSchema,
+  creativeIds: z.array(IdSchema).min(1).max(10),
+  pageId: z.string().optional(),
+  targeting: z.record(z.string(), z.unknown()).optional(),
+  billingEvent: z.string().optional(),
+  optimizationGoal: z.string().optional(),
+  specialAdCategories: z.array(z.string()).optional(),
+  destinationType: z.string().optional(),
+  promotedObject: z.record(z.string(), z.unknown()).optional(),
+  destinationUrl: z.string().optional(),
+  primaryText: z.string().optional(),
+  headline: z.string().optional(),
+  callToAction: z.record(z.string(), z.unknown()).optional(),
+  instagramActorId: z.string().optional(),
+});
+export type MetaAdPlanSettings = z.infer<typeof MetaAdPlanSettingsSchema>;
+
+export const MetaAdPlanAssistInputSchema = z.object({
+  campaignName: z.string().min(2).max(200),
+  objective: CampaignObjectiveSchema,
+  dailyBudget: z.number().positive(),
+  currency: z.string().length(3),
+  brief: z.string().max(4000).optional(),
+  language: z.enum(["ar", "en"]),
+  strategy: GeneratedCampaignStrategySchema,
+  audience: z.object({
+    name: z.string().max(200),
+    ageMin: z.number().int().min(13).max(65),
+    ageMax: z.number().int().min(13).max(65),
+    gender: z.enum(["all", "male", "female"]),
+    countries: z.array(z.string()).max(12),
+    interests: z.array(z.string()).max(20),
+  }),
+  destinationUrl: z.string().max(2000).optional(),
+  primaryText: z.string().max(3000).optional(),
+  headline: z.string().max(255).optional(),
+  callToActionType: z.string().max(80).optional(),
+  billingEvent: z.string().max(80).optional(),
+  optimizationGoal: z.string().max(80).optional(),
+  destinationType: z.string().max(80).optional(),
+  specialAdCategories: z.array(z.string()).max(5).default([]),
+});
+export type MetaAdPlanAssistInput = z.infer<typeof MetaAdPlanAssistInputSchema>;
+
+export const MetaAdPlanAssistResponseSchema = z.object({
+  primaryText: z.string().nullable(),
+  headline: z.string().nullable(),
+  callToActionType: z.string().nullable(),
+  billingEvent: z.string().nullable(),
+  optimizationGoal: z.string().nullable(),
+  destinationType: z.string().nullable(),
+  specialAdCategories: z.array(z.string()).nullable(),
+  bidStrategy: z.literal("LOWEST_COST_WITHOUT_CAP"),
+  allowedValues: z.record(z.string(), z.array(z.string())).default({}),
+  fieldValidation: z.record(z.string(), z.enum(["valid", "invalid", "unchecked"])).default({}),
+  assumptions: z.array(z.string()).default([]),
+  missingInputs: z.array(z.string()).default([]),
+  mcpContextAvailable: z.boolean(),
+  reviewRequired: z.boolean(),
+  writesToMeta: z.boolean(),
+});
+export type MetaAdPlanAssistResponse = z.infer<typeof MetaAdPlanAssistResponseSchema>;
+
+export const MetaAdPlanCreatedSchema = z.object({
+  campaignId: IdSchema,
+  recommendationId: IdSchema,
+  title: z.string(),
+  status: z.string(),
+  message: z.string(),
+});
+export type MetaAdPlanCreated = z.infer<typeof MetaAdPlanCreatedSchema>;
+
+export const MetaAdPlanApprovalResponseSchema = z.object({
+  recommendation: z.object({
+    id: IdSchema,
+    actionType: z.string(),
+    title: z.string(),
+    status: z.string(),
+    payload: z.record(z.string(), z.unknown()),
+    executionResult: z.record(z.string(), z.unknown()).nullable().optional(),
+  }).passthrough(),
+  diff: z.array(z.object({
+    field: z.string(),
+    before: z.unknown().optional(),
+    after: z.unknown().optional(),
+  })),
+  executed: z.boolean(),
+  requiresConfirmation: z.boolean(),
+  message: z.string(),
+  auditLogId: z.string().nullable().optional(),
+});
+export type MetaAdPlanApprovalResponse = z.infer<typeof MetaAdPlanApprovalResponseSchema>;
+
+export const MetaAdPlanActivationResponseSchema = z.object({
+  recommendation: MetaAdPlanApprovalResponseSchema.shape.recommendation,
+  executed: z.boolean(),
+  requiresConfirmation: z.boolean(),
+  targets: z.array(z.string()),
+  activated: z.array(z.string()),
+  message: z.string(),
+  unavailableReason: z.string().nullable().optional(),
+});
+export type MetaAdPlanActivationResponse = z.infer<typeof MetaAdPlanActivationResponseSchema>;
+
+export const MetaAdInsightSchema = z.object({
+  metaAdId: z.string(),
+  metaAdName: z.string(),
+  creativeId: IdSchema.nullable(),
+  prompt: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+  referenceAnalysisId: z.string().nullable(),
+  mapped: z.boolean(),
+  dateStart: z.string().nullable(),
+  dateEnd: z.string().nullable(),
+  metrics: z.record(z.string(), z.number()),
+  actions: z.array(z.record(z.string(), z.unknown())),
+  retrievedAt: z.string(),
+});
+export type MetaAdInsight = z.infer<typeof MetaAdInsightSchema>;
+export const MetaAdInsightsResponseSchema = z.object({
+  campaignId: IdSchema,
+  status: z.enum(["ok", "partial", "unavailable"]),
+  reason: z.string().nullable(),
+  dateStart: z.string(),
+  dateEnd: z.string(),
+  ads: z.array(MetaAdInsightSchema),
+});
+export type MetaAdInsightsResponse = z.infer<typeof MetaAdInsightsResponseSchema>;
+
 /* ------------------------------------------------------------------ */
 /* Reference analysis                                                  */
 /* ------------------------------------------------------------------ */
+
+export const ReferenceStyleElementSchema = z.object({
+  element: z.string().default(""),
+  relativePosition: z.string().default(""),
+  relativeSize: z.string().default(""),
+  visualAttributes: z.string().default(""),
+  exactText: z.string().default(""),
+  layerOrder: z.number().int().nullable().default(null),
+});
+export type ReferenceStyleElement = z.infer<typeof ReferenceStyleElementSchema>;
+
+export const ReferenceStyleSchema = z.object({
+  canvasRatio: z.string().default(""),
+  background: z.string().default(""),
+  lighting: z.string().default(""),
+  visibleText: z.array(z.string()).default([]),
+  elements: z.array(ReferenceStyleElementSchema).default([]),
+  palette: z.array(z.string()).default([]),
+  composition: z.string().default(""),
+  typography: z.string().default(""),
+  tone: z.string().default(""),
+  layoutPattern: z.string().default(""),
+  hookType: z.string().default(""),
+  colorMood: z.string().default(""),
+  textDensity: z.string().default(""),
+  brandElements: z.array(z.string()).default([]),
+  notes: z.string().default(""),
+});
+export type ReferenceStyle = z.infer<typeof ReferenceStyleSchema>;
 
 export const ReferenceAnalysisSchema = z.object({
   id: IdSchema,
   sourceUrl: z.string().optional(),
   sourceName: z.string(),
   kind: CreativeKindSchema,
+  status: z.enum(["ok", "partial", "unavailable"]).default("ok"),
+  unavailableReason: z.string().optional(),
   hook: z.string(),
   structure: z.array(z.string()),
   visualStyle: z.array(z.string()),
@@ -200,11 +504,39 @@ export const ReferenceAnalysisSchema = z.object({
   cta: z.string().optional(),
   strengths: z.array(z.string()),
   weaknesses: z.array(z.string()),
-  estimatedPerformance: z.enum(["low", "medium", "high"]),
+  estimatedPerformance: z.enum(["low", "medium", "high", "unknown"]),
   inspiredBrief: z.string(),
+  style: ReferenceStyleSchema.default(() => ReferenceStyleSchema.parse({})),
+  observedOffers: z.array(z.string()).default([]),
+  observedCta: z.array(z.string()).default([]),
   createdAt: IsoDateSchema,
 });
 export type ReferenceAnalysis = z.infer<typeof ReferenceAnalysisSchema>;
+
+export type ChatAttachmentUpload = {
+  /** `data:image/...;base64,...` — the payload the composer already builds. */
+  source: string;
+  fileName?: string;
+  mime?: string;
+};
+
+export const ChatAttachmentSchema = z.object({
+  id: IdSchema,
+  name: z.string().default(""),
+  mime: z.string().default("image/png"),
+  createdAt: IsoDateSchema.nullable().optional(),
+});
+export type ChatAttachment = z.infer<typeof ChatAttachmentSchema>;
+
+export const CreativeReferenceSchema = z.object({
+  id: IdSchema,
+  sourceName: z.string(),
+  summary: z.string().default(""),
+  style: ReferenceStyleSchema.default(() => ReferenceStyleSchema.parse({})),
+  favorite: z.boolean().default(false),
+  createdAt: IsoDateSchema.nullable().optional(),
+});
+export type CreativeReference = z.infer<typeof CreativeReferenceSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Insights, Recommendations, Learnings                                */
@@ -320,6 +652,8 @@ export type MetaConnectionStatus = z.infer<typeof MetaConnectionStatusSchema>;
 
 export const MetaConnectionSchema = z.object({
   status: MetaConnectionStatusSchema,
+  campaignReady: z.boolean().default(false),
+  pageConfigured: z.boolean().default(false),
   accountId: z.string().nullable(),
   accountName: z.string().nullable(),
   pageName: z.string().nullable(),
@@ -329,6 +663,56 @@ export const MetaConnectionSchema = z.object({
   errorMessage: z.string().nullable(),
 });
 export type MetaConnection = z.infer<typeof MetaConnectionSchema>;
+
+/** Read-only campaign row fetched from the connected Meta account. */
+export const MetaAccountCampaignSchema = z.object({
+  metaCampaignId: z.string(),
+  name: z.string(),
+  objective: z.string().nullable(),
+  status: z.string().nullable(),
+  effectiveStatus: z.string().nullable(),
+  createdTime: z.string().nullable(),
+  startTime: z.string().nullable(),
+  stopTime: z.string().nullable(),
+});
+export type MetaAccountCampaign = z.infer<typeof MetaAccountCampaignSchema>;
+
+export const MetaAccountCampaignPageSchema = z.object({
+  status: z.enum(["ok", "partial", "unavailable"]),
+  source: z.string(),
+  unavailableReason: z.string().nullable(),
+  accountId: z.string().nullable(),
+  campaigns: z.array(MetaAccountCampaignSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+  retrievedAt: z.string().nullable(),
+});
+export type MetaAccountCampaignPage = z.infer<typeof MetaAccountCampaignPageSchema>;
+
+export type ListMetaAccountCampaignsInput = {
+  search?: string;
+  limit?: number;
+  after?: string;
+};
+
+/** One category-aware targeting option resolved by Meta Targeting Search. */
+export const MetaInterestSuggestionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: TargetingCategorySchema.default("interests"),
+  audienceSize: z.number().nullable().optional(),
+  description: z.string().nullable().optional(),
+  path: z.array(z.string()).default([]),
+});
+export type MetaInterestSuggestion = z.infer<typeof MetaInterestSuggestionSchema>;
+
+export const MetaTargetingSearchSchema = z.object({
+  available: z.boolean().default(true),
+  unavailableReason: z.string().nullable().optional(),
+  results: z.array(MetaInterestSuggestionSchema).default([]),
+  hasMore: z.boolean().default(false),
+});
+export type MetaTargetingSearch = z.infer<typeof MetaTargetingSearchSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Agent tasks                                                         */
@@ -355,6 +739,7 @@ export const AgentTaskSchema = z.object({
       id: IdSchema,
     })
     .nullable(),
+  result: z.record(z.string(), z.unknown()).nullable().optional(),
   error: z.string().nullable(),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
@@ -520,7 +905,27 @@ export const AnyBlockSchema = z.union([MessageBlockSchema, UnknownBlockSchema]);
 export type AnyBlock = z.infer<typeof AnyBlockSchema>;
 
 export const ContextChipSchema = z.object({
-  kind: z.enum(["campaign", "creative", "insight", "competitor"]),
+  /**
+   * `attachment` is an image the user attached to this message (uploaded through
+   * `/assistant/attachments`). It is intentionally its own kind rather than a
+   * `reference`: an attachment is "a picture to talk about", while a reference
+   * is "a picture Layla must design from".
+   */
+  kind: z.enum([
+    "campaign",
+    "creative",
+    "insight",
+    "competitor",
+    "reference",
+    "attachment",
+    /**
+     * A stored Research-page result (`BrandMemoryItem` id). Distinct from
+     * `competitor`, which only carries a name: this one hands the backend the
+     * whole report so the assistant answers from the research instead of
+     * re-running it.
+     */
+    "research",
+  ]),
   id: IdSchema,
   label: z.string(),
 });
@@ -537,6 +942,20 @@ export const MessageSchema = z.object({
 });
 export type Message = z.infer<typeof MessageSchema>;
 
+export const AssistantConversationContextSchema = z.object({
+  campaignId: IdSchema.nullable().optional(),
+  creativeId: IdSchema.nullable().optional(),
+  insightId: IdSchema.nullable().optional(),
+  referenceAnalysisId: IdSchema.nullable().optional(),
+  workflow: z.enum(["creative_prompt"]).nullable().optional(),
+  promptType: z.enum(["image", "video"]).nullable().optional(),
+  /** Sticky picker choice: chat, a written prompt, or an actual image. */
+  creativeMode: z.enum(["chat", "prompt", "design"]).nullable().optional(),
+  personaId: z.string().nullable().optional(),
+  businessId: IdSchema.nullable().optional(),
+});
+export type AssistantConversationContext = z.infer<typeof AssistantConversationContextSchema>;
+
 export const ConversationSchema = z.object({
   id: IdSchema,
   title: z.string(),
@@ -544,6 +963,7 @@ export const ConversationSchema = z.object({
   messageCount: z.number().int().nonnegative(),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
+  context: AssistantConversationContextSchema.optional(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 
@@ -569,10 +989,13 @@ export const UpdateCampaignInputSchema = z.object({
 export type UpdateCampaignInput = z.infer<typeof UpdateCampaignInputSchema>;
 
 export const GenerateStrategyInputSchema = z.object({
+  campaignName: z.string().optional(),
   objective: CampaignObjectiveSchema,
   audience: AudienceSchema.omit({ id: true }).partial(),
   dailyBudget: z.number().positive(),
+  currency: z.string().length(3).optional(),
   brief: z.string().optional(),
+  language: z.enum(["ar", "en"]).optional(),
 });
 export type GenerateStrategyInput = z.infer<typeof GenerateStrategyInputSchema>;
 
@@ -581,6 +1004,7 @@ export const GenerateCreativeInputSchema = z.object({
   brief: z.string().min(3),
   campaignId: IdSchema.nullable().default(null),
   referenceAnalysisId: IdSchema.optional(),
+  referenceImageUrl: z.string().url().optional(),
   aspectRatio: z.enum(["1:1", "4:5", "9:16", "16:9"]).optional(),
   count: z.number().int().min(1).max(6).default(1),
 });
@@ -593,7 +1017,7 @@ export const GenerateVariationsInputSchema = z.object({
 export type GenerateVariationsInput = z.infer<typeof GenerateVariationsInputSchema>;
 
 export const AnalyzeReferenceInputSchema = z.object({
-  /** Base64 data URL or remote URL. Backend accepts either. */
+  /** PNG/JPEG/WebP data URL from the browser or a public remote image URL. */
   source: z.string().min(1),
   fileName: z.string().optional(),
   kind: CreativeKindSchema,
@@ -611,6 +1035,13 @@ export const SendMessageInputSchema = z.object({
   text: z.string().min(1),
   context: z.array(ContextChipSchema).default([]),
   language: z.enum(["en", "ar"]).optional(),
+  personaId: z.string().optional(),
+  workflow: z.enum(["creative_prompt"]).optional(),
+  promptType: z.enum(["image", "video"]).optional(),
+  creativeMode: z.enum(["chat", "prompt", "design"]).optional(),
+  referenceAnalysisId: IdSchema.nullable().optional(),
+  /** Images attached to this turn only (`POST /assistant/attachments`). */
+  attachmentIds: z.array(IdSchema).max(4).optional(),
   /** Set when replying to a question_with_options block. */
   answer: z.object({ messageId: IdSchema, optionIds: z.array(z.string()) }).optional(),
 });
@@ -645,6 +1076,7 @@ export type AddToCampaignInput = z.infer<typeof AddToCampaignInputSchema>;
 export const StartTaskInputSchema = z.object({
   type: ActionTypeSchema,
   payload: z.record(z.string(), z.unknown()).default({}),
+  conversationId: IdSchema.optional(),
 });
 export type StartTaskInput = z.infer<typeof StartTaskInputSchema>;
 
@@ -698,17 +1130,17 @@ export const ContentItemSchema = z.object({
   id: IdSchema,
   /** YYYY-MM-DD in the business timezone */
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   channel: ContentChannelSchema,
   format: ContentFormatSchema,
   title: z.string(),
-  hook: z.string().optional(),
-  caption: z.string().optional(),
+  hook: z.string().nullable().optional(),
+  caption: z.string().nullable().optional(),
   hashtags: z.array(z.string()).default([]),
   status: ContentStatusSchema,
   campaignId: IdSchema.nullable(),
   creativeId: IdSchema.nullable(),
-  pillar: z.string().optional(),
+  pillar: z.string().nullable().optional(),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
 });
@@ -746,6 +1178,7 @@ export const TextToolSchema = z.enum([
   "generate_image_prompt",
   "generate_video_prompt",
   "generate_ad_copy",
+  "generate_ad_variations",
 ]);
 export type TextTool = z.infer<typeof TextToolSchema>;
 
@@ -1072,6 +1505,14 @@ export const ConnectorSchema = z.object({
   hasOverride: z.boolean().default(false),
   configured: z.boolean().default(false),
   provider: z.string().nullable().default(null),
+  /**
+   * Values the provider field accepts, in server order. Empty when the connector
+   * has no provider selector. The form renders a select from this list so a
+   * supported provider cannot be misspelled into a save that does nothing.
+   */
+  providers: z.array(z.string()).default([]),
+  /** Required field keys that still have no value; empty when nothing is missing. */
+  missingRequired: z.array(z.string()).default([]),
   /** True when the chosen provider returns placeholder data rather than live data. */
   placeholder: z.boolean().default(false),
   fields: z.array(ConnectorFieldSchema).default([]),
@@ -1097,6 +1538,7 @@ export const ConnectorUpdateInputSchema = z.object({
   appId: z.string().max(120).nullable().optional(),
   appSecret: z.string().nullable().optional(),
   adAccountId: z.string().max(120).nullable().optional(),
+  pageId: z.string().max(120).nullable().optional(),
   accessToken: z.string().nullable().optional(),
   baseUrl: z.string().max(500).nullable().optional(),
   apiKey: z.string().nullable().optional(),
@@ -1195,8 +1637,105 @@ export const UsageSchema = z.object({
   budgetSource: z.string().default("default"),
   byModel: z.array(UsageBreakdownSchema).default([]),
   byPersona: z.array(UsageBreakdownSchema).default([]),
+  /** Tokens per action (`chat.turn`, `research.analyze_website`, ...). */
+  byAction: z.array(UsageBreakdownSchema).default([]),
+  /** Calls billed from an estimate because the provider reported no usage. */
+  estimatedCalls: z.number().int().default(0),
+  /** Null unless the workspace configured a token price — never a guess. */
+  estimatedCostUsd: z.number().nullable().default(null),
+  costPerMillionInUsd: z.number().default(0),
+  costPerMillionOutUsd: z.number().default(0),
 });
 export type Usage = z.infer<typeof UsageSchema>;
+
+/* Subscriptions & observability -------------------------------------------- */
+
+/**
+ * The three plans are **free quota tiers**, not billing tiers: every plan has a
+ * zero price. `isFree` is carried on the model so the UI can state that instead
+ * of inferring it from `monthlyPriceUsd === 0`.
+ */
+export const PlanIdSchema = z.enum(["free", "pro", "enterprise"]);
+export type PlanId = z.infer<typeof PlanIdSchema>;
+
+export const SubscriptionPlanSchema = z.object({
+  id: PlanIdSchema,
+  name: z.string(),
+  description: z.string().default(""),
+  dailyTokenBudget: z.number().int().default(0),
+  monthlyPriceUsd: z.number().default(0),
+  isFree: z.boolean().default(true),
+  features: z.array(z.string()).default([]),
+  supportedModels: z.array(z.string()).default([]),
+  maxWorkspaces: z.number().int().default(0),
+});
+export type SubscriptionPlan = z.infer<typeof SubscriptionPlanSchema>;
+
+/**
+ * `percentConsumed` is deliberately **unclamped**, for the same reason
+ * `percentUsed` on `Usage` is: 140 % has to be renderable, otherwise "at the
+ * limit" and "double the limit" look identical. The bar clamps, the number does
+ * not.
+ */
+export const WorkspaceSubscriptionSchema = z.object({
+  workspaceId: z.string(),
+  businessId: z.string().default(""),
+  businessName: z.string().default(""),
+  currentPlan: SubscriptionPlanSchema,
+  /** The ceiling the cost guard enforces, not a display-only number. */
+  dailyTokenBudget: z.number().int().default(0),
+  tokensUsedToday: z.number().int().default(0),
+  percentConsumed: z.number().default(0),
+  isBudgetExceeded: z.boolean().default(false),
+  observabilityActive: z.boolean().default(false),
+  observabilityDetails: z.record(z.string(), z.unknown()).default({}),
+});
+export type WorkspaceSubscription = z.infer<typeof WorkspaceSubscriptionSchema>;
+
+export const SwitchPlanResponseSchema = z.object({
+  success: z.boolean().default(false),
+  message: z.string().default(""),
+  previousPlanId: PlanIdSchema,
+  newPlan: SubscriptionPlanSchema,
+  updatedDailyBudget: z.number().int().default(0),
+});
+export type SwitchPlanResponse = z.infer<typeof SwitchPlanResponseSchema>;
+
+export const LocalLoggingStatusSchema = z.object({
+  status: z.string().default("active"),
+  logDir: z.string().default("logs"),
+  logLevel: z.string().default("info"),
+  format: z.string().default("text"),
+  llmLog: z.string().default(""),
+  agentLogs: z.string().default(""),
+  diagnosticLog: z.string().default(""),
+});
+
+/**
+ * Every tracing backend is optional and `enabled: false` is a **normal** state:
+ * the product runs on local log files alone. The UI therefore renders "off" as
+ * a configuration hint with the exact keys to add, never as an error.
+ */
+export const ObservabilityStatusSchema = z.object({
+  localLogging: LocalLoggingStatusSchema,
+  langsmith: z.object({
+    enabled: z.boolean().default(false),
+    project: z.string().default("sahm-ai"),
+    endpoint: z.string().default(""),
+  }),
+  langfuse: z.object({
+    enabled: z.boolean().default(false),
+    host: z.string().default(""),
+    publicKeyConfigured: z.boolean().default(false),
+    publicKeyPreview: z.string().nullable().default(null),
+  }),
+  costEstimator: z.object({
+    status: z.string().default("active"),
+    supportedModelsCount: z.number().int().default(0),
+    freeModels: z.array(z.string()).default([]),
+  }),
+});
+export type ObservabilityStatus = z.infer<typeof ObservabilityStatusSchema>;
 
 /* Audit -------------------------------------------------------------------- */
 

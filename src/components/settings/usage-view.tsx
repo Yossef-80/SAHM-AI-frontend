@@ -85,6 +85,7 @@ function UsagePanel({ period }: { period: UsagePeriod }) {
   return (
     <AsyncBoundary
       isLoading={query.isLoading}
+      isPending={query.isPending}
       isError={query.isError}
       error={query.error}
       data={query.data}
@@ -119,13 +120,29 @@ function UsagePanel({ period }: { period: UsagePeriod }) {
                 <Stat label={t("projected")} value={nf.format(usage.projectedTotalTokens)} />
                 <Stat label={t("tokensIn")} value={nf.format(usage.tokensIn)} />
                 <Stat label={t("tokensOut")} value={nf.format(usage.tokensOut)} />
+                <Stat label={t("estimatedCalls")} value={nf.format(usage.estimatedCalls)} />
+                <Stat
+                  label={t("estimatedCost")}
+                  value={
+                    usage.estimatedCostUsd === null
+                      ? t("notConfigured")
+                      : `$${usage.estimatedCostUsd.toFixed(4)}`
+                  }
+                />
               </dl>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {t("projectionNote")} · {t("budgetSource", { source: usage.budgetSource })}
               </p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {usage.estimatedCostUsd === null ? t("noCostConfigured") : t("costNote")}
+                {usage.estimatedCalls > 0 && ` ${t("estimatedNote")}`}
+              </p>
             </CardContent>
           </Card>
 
+          {/* Per-action first: this is the breakdown that answers "what did we
+              actually spend tokens on" for the whole product, not just chat. */}
+          <Breakdown title={t("byAction")} rows={usage.byAction} />
           <div className="grid gap-4 lg:grid-cols-2">
             <Breakdown title={t("byModel")} rows={usage.byModel} />
             <Breakdown title={t("byPersona")} rows={usage.byPersona} />

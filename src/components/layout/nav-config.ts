@@ -13,6 +13,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ export type NavItem = {
     | "connectors"
     | "memory"
     | "usage"
+    | "plan"
     | "audit";
   icon: LucideIcon;
   /** Rendered with a shorter label in dense contexts (mobile sheet). */
@@ -58,6 +60,7 @@ export const secondaryNav: NavItem[] = [
   { href: "/settings/connectors", key: "connectors", icon: Plug },
   { href: "/settings/memory", key: "memory", icon: BrainCircuit },
   { href: "/settings/usage", key: "usage", icon: Gauge },
+  { href: "/settings/plan", key: "plan", icon: Sparkles },
   { href: "/settings/audit", key: "audit", icon: ScrollText },
 ];
 
