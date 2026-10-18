@@ -1260,7 +1260,7 @@
     "compareDesc": "Get a structured gap analysis: which competitor leads on each dimension, where the gaps are, and what to do first.",
     "comparePlaceholderA": "First competitor (e.g. Nike Egypt)",
     "comparePlaceholderB": "Second competitor (e.g. Adidas Egypt)",
-    "comparePlaceholderCategory": "Category or market (optional — e.g. sports apparel, Cairo)",
+    "comparePlaceholderCategory": "What to compare? (optional: e.g. prices, materials, branches, service)",
     "compareHint": "Both names are required. Results are saved to brand memory.",
     "compareRun": "Compare",
     "compareRunning": "Comparing…",
@@ -1287,7 +1287,9 @@
     "compareLevel_high": "high",
     "compareConfidence_high": "high confidence",
     "compareConfidence_medium": "medium confidence",
-    "compareConfidence_low": "low confidence"
+    "compareConfidence_low": "low confidence",
+    "compareEvidenceLabel": "Evidence & Links",
+    "compareSourcesTitle": "Verified Sources & Live Evidence Links"
   },
   "calendar": {
     "title": "Content calendar",

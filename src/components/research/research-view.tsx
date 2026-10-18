@@ -30,7 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
-import { ComparisonPanel, type ComparisonPayload } from "./comparison-panel";
+import { ComparisonPanel, type ComparisonPayload, type SourceLink } from "./comparison-panel";
 import { getAccessToken, getActiveWorkspaceId } from "@/store/auth-store";
 import { useAssistantStore } from "@/store/assistant-store";
 
@@ -629,6 +629,7 @@ export function ResearchView() {
                         activeResearch.query.split(" vs ")[1] ??
                         "B"
                       }
+                      sources={activeResearch.details?.sources as SourceLink[] | undefined}
                     />
                   </div>
                 ) : null}

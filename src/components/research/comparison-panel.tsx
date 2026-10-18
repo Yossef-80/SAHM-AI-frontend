@@ -1,7 +1,8 @@
 "use client";
 
+import React from "react";
 import { useTranslations } from "next-intl";
-import { AlertTriangle, CheckCircle2, Target, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Globe2, Target, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -47,16 +48,63 @@ export interface ComparisonPayload {
   recommended_focus?: string[];
 }
 
+export interface SourceLink {
+  title?: string;
+  url?: string;
+  side?: string;
+}
+
 const asArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
+/**
+ * Parses markdown links [label](url) and bare URLs into interactive, clickable anchors.
+ */
+function renderTextWithLinks(text?: string): React.ReactNode {
+  if (!text) return null;
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)|(https?:\/\/[^\s\)]+)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const label = match[1] || match[3];
+    const url = match[2] || match[3];
+    parts.push(
+      <a
+        key={`${url}-${match.index}`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary hover:underline inline-flex items-center gap-0.5 font-medium break-all"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span>{label}</span>
+        <ExternalLink className="h-2.5 w-2.5 shrink-0 inline ms-0.5 opacity-70" />
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : text;
+}
 
 export function ComparisonPanel({
   comparison,
   competitorA,
   competitorB,
+  sources,
 }: {
   comparison: ComparisonPayload;
   competitorA: string;
   competitorB: string;
+  sources?: SourceLink[];
 }) {
   const t = useTranslations("research");
   const dimensions = asArray<Dimension>(comparison.dimensions);
@@ -88,7 +136,7 @@ export function ComparisonPanel({
     <div className="space-y-4">
       {comparison.summary ? (
         <div className="rounded-lg border bg-background/70 p-3 text-xs leading-relaxed">
-          {comparison.summary}
+          {renderTextWithLinks(comparison.summary)}
         </div>
       ) : null}
 
@@ -110,16 +158,41 @@ export function ComparisonPanel({
               </thead>
               <tbody>
                 {dimensions.map((dim, index) => (
-                  <tr key={`${dim.dimension ?? "dim"}-${index}`} className="border-t align-top">
-                    <td className="p-2 font-medium">{dim.dimension ?? "—"}</td>
-                    <td className="p-2 text-muted-foreground">{dim.competitor_a || "—"}</td>
-                    <td className="p-2 text-muted-foreground">{dim.competitor_b || "—"}</td>
-                    <td className="p-2">
-                      <Badge variant="outline" className="whitespace-nowrap text-[10px]">
-                        {verdictLabel(dim.verdict)}
-                      </Badge>
-                    </td>
-                  </tr>
+                  <React.Fragment key={`${dim.dimension ?? "dim"}-${index}`}>
+                    <tr className="border-t align-top">
+                      <td className="p-2 font-medium">{dim.dimension ?? "—"}</td>
+                      <td className="p-2 text-muted-foreground leading-relaxed">
+                        {renderTextWithLinks(dim.competitor_a || "—")}
+                      </td>
+                      <td className="p-2 text-muted-foreground leading-relaxed">
+                        {renderTextWithLinks(dim.competitor_b || "—")}
+                      </td>
+                      <td className="p-2">
+                        <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                          {verdictLabel(dim.verdict)}
+                        </Badge>
+                      </td>
+                    </tr>
+                    {asArray<string>(dim.evidence).length > 0 && (
+                      <tr className="bg-muted/15 border-b">
+                        <td colSpan={4} className="px-2 py-1 text-[10px] text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="font-semibold text-[9px] uppercase tracking-wider text-muted-foreground/90 shrink-0">
+                              {t("compareEvidenceLabel") || "الأدلة والروابط"}:
+                            </span>
+                            {asArray<string>(dim.evidence).map((ev, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center gap-1 bg-background/80 border rounded px-1.5 py-0.5 text-[10px]"
+                              >
+                                {renderTextWithLinks(ev)}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -137,7 +210,7 @@ export function ComparisonPanel({
             {gaps.map((gap, index) => (
               <li key={`${gap.title ?? "gap"}-${index}`} className="rounded-lg border p-2.5 text-[11px]">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium">{gap.title ?? t("compareUntitled")}</p>
+                  <p className="font-medium">{renderTextWithLinks(gap.title ?? t("compareUntitled"))}</p>
                   <div className="flex shrink-0 items-center gap-1">
                     <Badge variant="secondary" className="text-[10px]">
                       {whoLabel(gap.who_has_it)}
@@ -150,12 +223,14 @@ export function ComparisonPanel({
                   </div>
                 </div>
                 {gap.why_it_matters ? (
-                  <p className="mt-1 text-muted-foreground">{gap.why_it_matters}</p>
+                  <p className="mt-1 text-muted-foreground leading-relaxed">
+                    {renderTextWithLinks(gap.why_it_matters)}
+                  </p>
                 ) : null}
                 {asArray<string>(gap.evidence).length > 0 ? (
-                  <ul className="mt-1 space-y-0.5 text-[10px] text-muted-foreground/80">
-                    {asArray<string>(gap.evidence).slice(0, 3).map((item, i) => (
-                      <li key={i}>· {item}</li>
+                  <ul className="mt-1.5 space-y-0.5 text-[10px] text-muted-foreground/80">
+                    {asArray<string>(gap.evidence).slice(0, 4).map((item, i) => (
+                      <li key={i}>· {renderTextWithLinks(item)}</li>
                     ))}
                   </ul>
                 ) : null}
@@ -175,7 +250,7 @@ export function ComparisonPanel({
             {opportunities.map((opp, index) => (
               <li key={`${opp.title ?? "opp"}-${index}`} className="rounded-lg border p-2.5 text-[11px]">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium">{opp.title ?? t("compareUntitled")}</p>
+                  <p className="font-medium">{renderTextWithLinks(opp.title ?? t("compareUntitled"))}</p>
                   <div className="flex shrink-0 items-center gap-1">
                     {opp.impact ? (
                       <Badge variant="outline" className={`text-[10px] ${effortTone(opp.impact)}`}>
@@ -189,12 +264,23 @@ export function ComparisonPanel({
                     ) : null}
                   </div>
                 </div>
-                {opp.rationale ? <p className="mt-1 text-muted-foreground">{opp.rationale}</p> : null}
+                {opp.rationale ? (
+                  <p className="mt-1 text-muted-foreground leading-relaxed">
+                    {renderTextWithLinks(opp.rationale)}
+                  </p>
+                ) : null}
                 {opp.first_step ? (
                   <p className="mt-1 flex items-start gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
-                    {opp.first_step}
+                    <span>{renderTextWithLinks(opp.first_step)}</span>
                   </p>
+                ) : null}
+                {asArray<string>(opp.evidence).length > 0 ? (
+                  <ul className="mt-1.5 space-y-0.5 text-[10px] text-muted-foreground/80">
+                    {asArray<string>(opp.evidence).slice(0, 3).map((item, i) => (
+                      <li key={i}>· {renderTextWithLinks(item)}</li>
+                    ))}
+                  </ul>
                 ) : null}
               </li>
             ))}
@@ -209,9 +295,71 @@ export function ComparisonPanel({
           </h4>
           <ol className="list-inside list-decimal space-y-1 text-[11px]">
             {focus.map((item, index) => (
-              <li key={index}>{item}</li>
+              <li key={index} className="leading-relaxed">
+                {renderTextWithLinks(item)}
+              </li>
             ))}
           </ol>
+        </section>
+      )}
+
+      {asArray<SourceLink>(sources).length > 0 && (
+        <section className="space-y-2 pt-2 border-t">
+          <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <Globe2 className="h-3.5 w-3.5 text-primary" />
+            {t("compareSourcesTitle") || "المصادر المعتمدة وروابط الأدلة الحية"}
+          </h4>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border bg-muted/20 p-2.5 space-y-1.5">
+              <div className="text-[11px] font-medium text-foreground flex items-center justify-between">
+                <span>{competitorA}</span>
+                <Badge variant="outline" className="text-[9px]">
+                  {asArray<SourceLink>(sources).filter((s) => s.side === "a" || !s.side).length}
+                </Badge>
+              </div>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {asArray<SourceLink>(sources)
+                  .filter((s) => s.side === "a" || !s.side)
+                  .map((s, idx) => (
+                    <a
+                      key={idx}
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between gap-1.5 p-1 rounded hover:bg-muted text-[10px] text-foreground hover:text-primary transition-colors group"
+                    >
+                      <span className="truncate group-hover:underline">{s.title || s.url}</span>
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                    </a>
+                  ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20 p-2.5 space-y-1.5">
+              <div className="text-[11px] font-medium text-foreground flex items-center justify-between">
+                <span>{competitorB}</span>
+                <Badge variant="outline" className="text-[9px]">
+                  {asArray<SourceLink>(sources).filter((s) => s.side === "b").length}
+                </Badge>
+              </div>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {asArray<SourceLink>(sources)
+                  .filter((s) => s.side === "b")
+                  .map((s, idx) => (
+                    <a
+                      key={idx}
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between gap-1.5 p-1 rounded hover:bg-muted text-[10px] text-foreground hover:text-primary transition-colors group"
+                    >
+                      <span className="truncate group-hover:underline">{s.title || s.url}</span>
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                    </a>
+                  ))}
+              </div>
+            </div>
+          </div>
         </section>
       )}
     </div>

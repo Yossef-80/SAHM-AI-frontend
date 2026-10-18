@@ -1260,7 +1260,7 @@
     "compareDesc": "احصل على تحليل فجوات منظم: من يتقدم في كل بُعد، وأين الفجوات، وما الخطوة الأولى.",
     "comparePlaceholderA": "المنافس الأول (مثال: نايك مصر)",
     "comparePlaceholderB": "المنافس الثاني (مثال: أديداس مصر)",
-    "comparePlaceholderCategory": "الفئة أو السوق (اختياري — مثال: ملابس رياضية، القاهرة)",
+    "comparePlaceholderCategory": "ما الذي تريد مقارنته؟ (اختياري: مثلاً الأسعار، الخامات والتقفيل، الفروع، الخدمة)",
     "compareHint": "الاسمان مطلوبان. تُحفظ النتيجة في ذاكرة العلامة.",
     "compareRun": "قارن",
     "compareRunning": "جارٍ المقارنة…",
@@ -1287,7 +1287,9 @@
     "compareLevel_high": "مرتفع",
     "compareConfidence_high": "ثقة عالية",
     "compareConfidence_medium": "ثقة متوسطة",
-    "compareConfidence_low": "ثقة منخفضة"
+    "compareConfidence_low": "ثقة منخفضة",
+    "compareEvidenceLabel": "الأدلة والروابط",
+    "compareSourcesTitle": "المصادر المعتمدة وروابط الأدلة الحية"
   },
   "calendar": {
     "title": "تقويم المحتوى",
