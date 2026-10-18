@@ -1398,6 +1398,11 @@ export class MockApi implements MarketingApi {
     const conversation = findOr404(state.conversations, id, "Conversation");
     return { conversation: clone(conversation), messages: clone(state.messages[id] ?? []) };
   }
+  async deleteConversation(id: string) {
+    await simulate();
+    state.conversations = state.conversations.filter((c) => c.id !== id);
+    delete state.messages[id];
+  }
   async sendMessage(raw: unknown) {
     const input = SendMessageInputSchema.parse(raw);
     await simulate({ safe: input.workflow === "creative_prompt" });

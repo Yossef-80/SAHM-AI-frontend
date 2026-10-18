@@ -1,18 +1,43 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, CheckCircle2, Circle, Download, ExternalLink, Image as ImageIcon, Loader2, Minus, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Circle,
+  Download,
+  ExternalLink,
+  Image as ImageIcon,
+  Loader2,
+  Minus,
+  Package,
+  Palette,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  Sun,
+  Type,
+  Wand2,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionButton } from "@/components/shared/action-button";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { useTask } from "@/hooks/use-api";
+import { useGenerateCreative, useTask } from "@/hooks/use-api";
 import { qk } from "@/lib/query-keys";
 import { formatDelta, formatMetric } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -903,12 +928,122 @@ export function ErrorBlockView({ block, ctx }: { block: ErrorBlock; ctx: BlockCo
 /* image preview                                                       */
 /* ------------------------------------------------------------------ */
 
+interface ParsedPromptStructure {
+  scene?: string;
+  palette: string[];
+  objects: string[];
+  lighting?: string;
+  typography: string[];
+}
+
+function parsePromptStructure(prompt: string, isAr: boolean): ParsedPromptStructure {
+  const result: ParsedPromptStructure = {
+    palette: [],
+    objects: [],
+    typography: [],
+  };
+
+  if (!prompt || !prompt.trim()) return result;
+
+  // 1. Quoted text / Typography
+  const quoteRegex = /["“«]([^"”»]+)["”»]/g;
+  let match;
+  while ((match = quoteRegex.exec(prompt)) !== null) {
+    const text = match[1].trim();
+    if (text && !result.typography.includes(text)) {
+      result.typography.push(text);
+    }
+  }
+
+  // 2. Sentences
+  const sentences = prompt
+    .split(/[.،;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // 3. Color detection
+  const colorKeywordsAr = [
+    "أخضر", "أزرق", "رمادي", "أسود", "أبيض", "ذهبي", "بني", "أحمر", "أصفر",
+    "ترابي", "سماوي", "نيلي", "كحلي", "وردي", "بنفسجي", "فضي", "بيج", "كريمي"
+  ];
+  const colorKeywordsEn = [
+    "green", "blue", "gray", "grey", "black", "white", "gold", "brown", "red",
+    "yellow", "earthy", "cyan", "navy", "pink", "purple", "silver", "beige", "cream"
+  ];
+  const activeColorKeywords = isAr ? colorKeywordsAr : colorKeywordsEn;
+
+  // Hex codes
+  const hexMatches = prompt.match(/#[0-9a-fA-F]{3,6}\b/g) || [];
+  result.palette.push(...hexMatches);
+
+  for (const cw of activeColorKeywords) {
+    if (prompt.toLowerCase().includes(cw.toLowerCase())) {
+      if (!result.palette.includes(cw)) {
+        result.palette.push(cw);
+      }
+    }
+  }
+
+  // 4. Object detection
+  const objectKeywordsAr = [
+    "كيس قهوة", "كوب قهوة", "فنجان", "كيس", "كوب", "منتج", "علبة", "عبوة",
+    "طاولة", "مقعد", "شعار", "سجل", "اسطوانة", "خلفية", "إعلان", "زجاجة"
+  ];
+  const objectKeywordsEn = [
+    "coffee bag", "coffee cup", "cup", "bag", "product", "box", "package",
+    "table", "stool", "chair", "logo", "record", "vinyl", "background", "bottle"
+  ];
+  const activeObjectKeywords = isAr ? objectKeywordsAr : objectKeywordsEn;
+  for (const obj of activeObjectKeywords) {
+    if (prompt.toLowerCase().includes(obj.toLowerCase())) {
+      if (!result.objects.includes(obj)) {
+        result.objects.push(obj);
+      }
+    }
+  }
+
+  // 5. Lighting / Composition sentence
+  const lightingKeywords = isAr
+    ? ["إضاءة", "ناعمة", "متساوية", "ساطعة", "تكوين", "متماثل", "مركزي", "متناسق"]
+    : ["lighting", "soft", "even", "bright", "composition", "symmetrical", "centered", "balanced"];
+
+  for (const sentence of sentences) {
+    if (lightingKeywords.some((k) => sentence.toLowerCase().includes(k.toLowerCase()))) {
+      result.lighting = sentence;
+      break;
+    }
+  }
+
+  // 6. Scene / Subject (first informative sentence)
+  if (sentences.length > 0) {
+    result.scene = sentences[0];
+  }
+
+  return result;
+}
+
 export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
   const t = useTranslations("assistant");
+  const locale = useLocale();
+  const isAr = locale === "ar";
   const [loadError, setLoadError] = useState(false);
+  const [showPromptDetails, setShowPromptDetails] = useState(false);
+  const [promptTab, setPromptTab] = useState<"breakdown" | "edit">("breakdown");
+  const [editedPrompt, setEditedPrompt] = useState(block.prompt || "");
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+
+  const generateMutation = useGenerateCreative();
+  const notifiedRef = useRef(false);
+
+  useEffect(() => {
+    if (!notifiedRef.current) {
+      notifiedRef.current = true;
+      toast.success(t("imageGeneratedSaved"));
+    }
+  }, [t]);
 
   const resolvedUrl = useMemo(() => {
-    let url = block.url;
+    let url = currentUrl || block.url;
     if (url && (url.includes("api.example.com") || url.includes("example.com"))) {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1";
       try {
@@ -920,7 +1055,12 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
       }
     }
     return url;
-  }, [block.url]);
+  }, [currentUrl, block.url]);
+
+  const structure = useMemo(
+    () => parsePromptStructure(editedPrompt || block.prompt || "", isAr),
+    [editedPrompt, block.prompt, isAr]
+  );
 
   const handleDownload = () => {
     try {
@@ -933,6 +1073,25 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
       document.body.removeChild(a);
     } catch {
       window.open(resolvedUrl, "_blank");
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!editedPrompt.trim() || generateMutation.isPending) return;
+    try {
+      const res = await generateMutation.mutateAsync({
+        kind: "image",
+        brief: editedPrompt,
+        campaignId: null,
+        count: 1,
+      });
+      if (res && res[0]?.assetUrl) {
+        setCurrentUrl(res[0].assetUrl);
+        setLoadError(false);
+        toast.success(t("imageGeneratedSaved"));
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to regenerate image");
     }
   };
 
@@ -994,10 +1153,187 @@ export function ImagePreviewBlockView({ block }: { block: ImagePreviewBlock }) {
             />
           )}
         </div>
-        {block.prompt && (
-          <div className="rounded bg-muted/40 p-2 text-xs text-muted-foreground leading-relaxed border border-border/50">
-            <span className="font-semibold text-foreground me-1">{t("promptLabel")}:</span>
-            {block.prompt}
+
+        {/* Collapsible Prompt & Breakdown Tab Header */}
+        {(block.prompt || editedPrompt) && (
+          <div className="rounded-lg border bg-muted/20 overflow-hidden">
+            <div className="flex items-center justify-between p-2 bg-muted/40 border-b">
+              <button
+                type="button"
+                onClick={() => setShowPromptDetails(!showPromptDetails)}
+                className="flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors"
+              >
+                <Wand2 className="h-3.5 w-3.5 text-primary" />
+                <span>{t("viewEditPrompt")}</span>
+                {showPromptDetails ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </button>
+
+              {showPromptDetails && (
+                <div className="flex items-center gap-1 bg-background/80 rounded-md p-0.5 border">
+                  <button
+                    type="button"
+                    onClick={() => setPromptTab("breakdown")}
+                    className={cn(
+                      "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                      promptTab === "breakdown"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {t("promptBreakdown")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPromptTab("edit")}
+                    className={cn(
+                      "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                      promptTab === "edit"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {t("editPrompt")}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Prompt Tab Content */}
+            {showPromptDetails ? (
+              <div className="p-3">
+                {promptTab === "breakdown" ? (
+                  <div className="max-h-64 overflow-y-auto space-y-2.5 text-xs">
+                    {/* Scene / Subject */}
+                    {structure.scene && (
+                      <div className="p-2 rounded-md border bg-background/60 space-y-1">
+                        <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                          <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                          <span>{t("promptSectionScene")}</span>
+                        </div>
+                        <p className="text-muted-foreground leading-relaxed ps-5">{structure.scene}</p>
+                      </div>
+                    )}
+
+                    {/* Colors & Palette */}
+                    {structure.palette.length > 0 && (
+                      <div className="p-2 rounded-md border bg-background/60 space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                          <Palette className="h-3.5 w-3.5 text-primary" />
+                          <span>{t("promptSectionPalette")}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 ps-5">
+                          {structure.palette.map((color, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-[11px] font-normal gap-1">
+                              <span
+                                className="h-2 w-2 rounded-full border border-border/50 shrink-0"
+                                style={{ backgroundColor: color.startsWith("#") ? color : "currentColor" }}
+                              />
+                              {color}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Objects & Elements */}
+                    {structure.objects.length > 0 && (
+                      <div className="p-2 rounded-md border bg-background/60 space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                          <Package className="h-3.5 w-3.5 text-emerald-500" />
+                          <span>{t("promptSectionObjects")}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 ps-5">
+                          {structure.objects.map((obj, idx) => (
+                            <Badge key={idx} variant="outline" className="text-[11px] font-normal">
+                              {obj}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Typography & Text */}
+                    {structure.typography.length > 0 && (
+                      <div className="p-2 rounded-md border bg-background/60 space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                          <Type className="h-3.5 w-3.5 text-sky-500" />
+                          <span>{t("promptSectionTypography")}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 ps-5">
+                          {structure.typography.map((txt, idx) => (
+                            <div key={idx} className="rounded bg-sky-500/10 text-sky-700 dark:text-sky-300 px-2 py-0.5 text-xs font-medium border border-sky-500/20">
+                              «{txt}»
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lighting & Composition */}
+                    {structure.lighting && (
+                      <div className="p-2 rounded-md border bg-background/60 space-y-1">
+                        <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                          <Sun className="h-3.5 w-3.5 text-amber-500" />
+                          <span>{t("promptSectionLighting")}</span>
+                        </div>
+                        <p className="text-muted-foreground leading-relaxed ps-5">{structure.lighting}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <Textarea
+                      value={editedPrompt}
+                      onChange={(e) => setEditedPrompt(e.target.value)}
+                      placeholder={t("promptEditPlaceholder")}
+                      rows={3}
+                      className="text-xs resize-none min-h-[70px] leading-relaxed"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditedPrompt(block.prompt || "")}
+                        disabled={editedPrompt === block.prompt || generateMutation.isPending}
+                        className="h-7 text-xs gap-1"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        <span>{t("reset", { defaultValue: "استعادة الأصل" })}</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!editedPrompt.trim() || generateMutation.isPending}
+                        onClick={handleRegenerate}
+                        className="h-7 text-xs gap-1.5"
+                      >
+                        {generateMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>{t("regenerating")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span>{t("regenerateImage")}</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-2 text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                <span className="font-semibold text-foreground me-1">{t("promptLabel")}:</span>
+                {editedPrompt || block.prompt}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

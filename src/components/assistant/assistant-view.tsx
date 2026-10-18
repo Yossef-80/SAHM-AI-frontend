@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { History, Images, Loader2, Sparkles } from "lucide-react";
+import { History, Images, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { useChat } from "@/hooks/use-chat";
 import { useAgents } from "@/hooks/use-api";
+import { cn } from "@/lib/utils";
 import { AUTO_PERSONA, useAssistantStore } from "@/store/assistant-store";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,6 +32,7 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
   const setPersonaId = useAssistantStore((s) => s.setPersonaId);
   const agents = useAgents();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -168,12 +170,35 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
 
   return (
     <div className="-m-4 flex h-[calc(100vh-3.5rem-5rem)] md:-m-8 md:h-screen">
-      <aside className="hidden w-72 shrink-0 border-e bg-card lg:block">
-        <ConversationList activeId={conversationId} />
+      <aside
+        className={cn(
+          "hidden shrink-0 border-e bg-card transition-all duration-300 ease-in-out lg:block overflow-hidden",
+          sidebarCollapsed ? "w-0 border-e-0 opacity-0 pointer-events-none" : "w-72 opacity-100"
+        )}
+      >
+        <div className="w-72 h-full">
+          <ConversationList activeId={conversationId} />
+        </div>
       </aside>
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b px-4 py-2">
-          <h1 className="text-sm font-semibold">{t("title")}</h1>
+        <header className="flex items-center justify-between border-b px-3 sm:px-4 py-2">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden lg:inline-flex h-8 w-8 p-0"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? t("expandHistory") : t("collapseHistory")}
+              aria-label={sidebarCollapsed ? t("expandHistory") : t("collapseHistory")}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
+            <h1 className="text-sm font-semibold">{t("title")}</h1>
+          </div>
           <div className="flex items-center gap-2">
             {/* The return leg of the creative flow. Chat can interview the user
                 and generate a creative, but the record it writes (`media.py`
@@ -236,7 +261,7 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
             )}
           </div>
         </div>
-        <div className="border-t bg-background p-3 md:p-4">
+        <div className="border-t bg-background p-2 sm:p-3">
           <div className="mx-auto max-w-3xl">
             <Composer
               onSend={onSend}
@@ -252,12 +277,12 @@ export function AssistantView({ conversationId }: { conversationId: string | nul
                */
               toolbar={
                 <>
-                  <span className="text-xs text-muted-foreground">{t("talkingTo")}</span>
+                  <span className="text-xs text-muted-foreground hidden sm:inline">{t("talkingTo")}</span>
                   <Select
                     value={effectivePersonaId ?? AUTO_PERSONA}
                     onValueChange={setPersonaId}
                   >
-                    <SelectTrigger className="h-8 w-auto min-w-40 gap-1 text-xs" aria-label={t("talkingTo")}>
+                    <SelectTrigger className="h-7 w-auto min-w-32 sm:min-w-36 gap-1 text-xs" aria-label={t("talkingTo")}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

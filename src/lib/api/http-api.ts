@@ -1219,6 +1219,10 @@ export class HttpApi implements MarketingApi {
     return { conversation, messages };
   }
 
+  async deleteConversation(id: string): Promise<void> {
+    await this.delete(`/assistant/conversations/${id}`);
+  }
+
   async sendMessage(input: SendMessageInput): Promise<SendMessageOutput> {
     const payload = await this.raw("/assistant/message", {
       method: "POST",

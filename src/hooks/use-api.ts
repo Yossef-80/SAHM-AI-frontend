@@ -249,6 +249,16 @@ export const useConversations = () =>
   useQuery({ queryKey: qk.conversations, queryFn: () => api.listConversations(), staleTime: 60_000 });
 export const useConversation = (id: string | null) =>
   useQuery({ queryKey: qk.conversation(id ?? ""), queryFn: () => api.getConversation(id!), enabled: !!id, staleTime: 60_000 });
+export const useDeleteConversation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteConversation(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: qk.conversations });
+      qc.removeQueries({ queryKey: qk.conversation(id) });
+    },
+  });
+};
 
 /* Tasks — polls while running */
 export const useTask = (id: string, enabled = true) =>

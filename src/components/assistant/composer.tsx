@@ -369,7 +369,7 @@ export function Composer({
   };
 
   return (
-    <form onSubmit={submit} className="relative space-y-2 rounded-lg border bg-card p-3">
+    <form onSubmit={submit} className="relative space-y-1.5 rounded-lg border bg-card p-2 sm:p-2.5">
       {mentionQuery !== null && (
         <div className="absolute bottom-full start-3 mb-2 w-80 sm:w-96 max-h-72 overflow-hidden flex flex-col rounded-lg border bg-popover shadow-xl z-50 animate-in fade-in-50 slide-in-from-bottom-2">
           <div className="p-2 border-b bg-muted/30 flex flex-col gap-1.5">
@@ -470,11 +470,11 @@ export function Composer({
         </div>
       )}
       <ContextChips />
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         <div
           role="radiogroup"
           aria-label={t("modeGroup")}
-          className="flex flex-wrap gap-1.5"
+          className="flex flex-wrap gap-1"
         >
           {MODES.map(({ id, icon: Icon }) => (
             <Button
@@ -486,16 +486,16 @@ export function Composer({
               aria-checked={mode === id}
               onClick={() => onModeChange(id)}
               title={t(`mode.${id}.hint`)}
-              className="gap-1.5"
+              className="h-7 px-2 text-xs gap-1"
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="h-3 w-3" />
               {t(`mode.${id}.label`)}
             </Button>
           ))}
         </div>
-        {toolbar && <div className="ms-auto flex items-center gap-2">{toolbar}</div>}
+        {toolbar && <div className="ms-auto flex items-center gap-1.5">{toolbar}</div>}
       </div>
-      <p className="text-xs text-muted-foreground">{t(`mode.${mode}.hint`)}</p>
+      <p className="text-[11px] text-muted-foreground/80 truncate px-0.5">{t(`mode.${mode}.hint`)}</p>
       <input
         ref={fileRef}
         type="file"
@@ -515,6 +515,7 @@ export function Composer({
           onClick={() => fileRef.current?.click()}
           aria-label={t("attachImage")}
           title={t("attachImage")}
+          className="h-[38px] w-[38px] shrink-0"
         >
           {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
         </Button>
@@ -524,17 +525,17 @@ export function Composer({
           onChange={handleChange}
           onKeyDown={onKey}
           placeholder={t("placeholder")}
-          rows={2}
-          className="min-h-[44px] resize-none"
+          rows={1}
+          className="min-h-[38px] max-h-32 py-2 text-xs sm:text-sm resize-none"
           aria-label={t("placeholder")}
           disabled={disabled}
         />
         {disabled ? (
-          <Button type="button" variant="outline" size="icon" onClick={onStop} aria-label={t("stop")}>
+          <Button type="button" variant="outline" size="icon" onClick={onStop} aria-label={t("stop")} className="h-[38px] w-[38px] shrink-0">
             <Square className="h-4 w-4" />
           </Button>
         ) : (
-          <Button type="submit" size="icon" disabled={!value.trim() || disabled || upload.isPending} aria-label={t("send")}>
+          <Button type="submit" size="icon" disabled={!value.trim() || disabled || upload.isPending} aria-label={t("send")} className="h-[38px] w-[38px] shrink-0">
             <ArrowUp className="h-4 w-4" />
           </Button>
         )}

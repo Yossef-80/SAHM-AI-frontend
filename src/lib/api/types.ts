@@ -186,6 +186,7 @@ export interface MarketingApi {
   /* Assistant */
   listConversations(): Promise<Conversation[]>;
   getConversation(id: string): Promise<{ conversation: Conversation; messages: Message[] }>;
+  deleteConversation(id: string): Promise<void>;
   sendMessage(input: SendMessageInput): Promise<SendMessageOutput>;
   /**
    * Streaming-ready: yields progressively updated assistant messages.
